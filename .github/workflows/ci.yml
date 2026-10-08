@@ -2,8 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [SAConfig, develop]
+    branches: 
+      - '**'
+
   pull_request:
+    branches:
+      - 'develop'
 
 jobs:
   test:

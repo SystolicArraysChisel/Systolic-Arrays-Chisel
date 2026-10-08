@@ -51,7 +51,13 @@ case class SAConfig(
     16; // width, in bits, of the hardware registers and wires that hold matrix sizes
   val arrayLatency: Int =
     rows + cols - 1; /* Cycles between row m of aIn entering the array and row m of out leaving it, after skew and de-skew */
-    // WARNING: Comes from Andreea’s schedule function may be subject to change
+  /** Minimum number of empty cycles between the last weight beat (wIn) and the
+    * first activation (aIn): the first aIn may be valid weightToActGap + 1
+    * cycles after the last wIn beat. Depends on Andreea's PE design: TO
+    * CONFIRM. 0 for now.
+    */
+  val weightToActGap: Int = 0
+  // WARNING: Comes from Andreea’s schedule function may be subject to change
   val dspCount: Int = rows * cols * vecWidth; /* Number of multipliers, one DSP
   each. Used by the checks and the resource reports */
 

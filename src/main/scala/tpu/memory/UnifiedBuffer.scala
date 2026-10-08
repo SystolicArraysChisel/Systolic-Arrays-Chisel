@@ -6,7 +6,7 @@ import chisel3.util._
 import ifaces._
 
 /**
-  * Banked on-chip memory holding the matrices A, B and the results C
+  * Banked on-chip memory holding the matrices A, B and the results C.
   */
 class UnifiedBuffer(c: SAConfig) extends Module {
     val io = IO(new Bundle {
@@ -20,36 +20,32 @@ class UnifiedBuffer(c: SAConfig) extends Module {
         val resWr = Flipped(Decoupled(new BufResultWrite(c)))
     })
 
-    io.hostWr.ready := true.B // The host can always write to the input memory
-
 
 
     /**
       * Input memory for A and B. Written element by element by 
       * the host (hostWr, always ready), read one whole row per 
-      * cycle by the data mover
+      * cycle by the data mover.
       */
     val inputMem = Seq.fill(c.banks) {
         SyncReadMem(c.inDepth / c.banks, c.inT)
     }
 
+    /**
+      * Write logic for the input memory. The host can always write to it, 
+      * and the data mover can always read from it.
+      */
+    io.hostWr.ready := true.B // The host can always write to the input memory
+
     val hostWrBank = Wire(UInt(c.bankBits.W))
     val hostWrRow = Wire(UInt((c.addrW - c.bankBits).W))
-    val mvRdBank = Wire(UInt(c.bankBits.W))
-    val mvRdRow = Wire(UInt((c.addrW - c.bankBits).W))
 
     if (c.bankBits > 0) {
-        val hostWrBank = io.hostWr.bits.addr(c.bankBits - 1, 0)
-        val hostWrRow = io.hostWr.bits.addr(c.addrW - 1, c.bankBits)
-
-        val mvRdBank = io.mvRdReq.bits.rowAddr(c.bankBits - 1, 0)
-        val mvRdRow = io.mvRdReq.bits.rowAddr(c.addrW - 1, c.bankBits)
+        hostWrBank := io.hostWr.bits.addr(c.bankBits - 1, 0)
+        hostWrRow := io.hostWr.bits.addr(c.addrW - 1, c.bankBits)
     } else {
-        val hostWrBank = 0.U
-        val hostWrRow = io.hostWr.bits.addr(c.addrW - 1, 0)
-
-        val mvRdBank = 0.U
-        val mvRdRow = io.mvRdReq.bits.rowAddr(c.addrW - 1, 0)
+        hostWrBank := 0.U
+        hostWrRow := io.hostWr.bits.addr(c.addrW - 1, 0)
     }
 
     when (io.hostWr.fire) {
@@ -62,7 +58,20 @@ class UnifiedBuffer(c: SAConfig) extends Module {
         }
     }
 
-    
+    /**
+      * Read logic for the input memory. 
+      * The data mover can always read from it.
+      */
+    io.mvRdReq.ready := true.B
+
+    val mvRdRespVec = Wire(Vec(c.banks, c.inT))
+    for (b <- 0 until c.banks) {
+        mvRdRespVec(b) := inputMem(b).read(
+            io.mvRdReq.bits.rowAddr, 
+            io.mvRdReq.valid)
+    }
+    io.mvRdResp.bits := mvRdRespVec
+    io.mvRdResp.valid := RegNext(io.mvRdReq.valid, false.B)
 
 
 

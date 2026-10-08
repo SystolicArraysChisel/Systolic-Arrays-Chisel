@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class AddTester extends AnyFlatSpec with ChiselScalatestTester {
+class SAConfigTester extends AnyFlatSpec with ChiselScalatestTester {
 
   behavior of "SAConfig"
 

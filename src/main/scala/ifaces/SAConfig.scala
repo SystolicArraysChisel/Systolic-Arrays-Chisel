@@ -23,6 +23,8 @@ case class SAConfig(
     // Speed loads all rows at once (many wires)
     inDepth: Int =
       4096, // Number of inT elements the input memory holds (A and B together)
+    outDepth: Int =
+      4096, // Number of accT words the result memory holds (C). Separate from the input memory.
     maxM: Int =
       256 /* Depth of the accumulator memory (the Accumulators block below the array), in rows of C.
        * Partial sums of every row of C are stored there between K-tiles, so one MATMUL
@@ -41,6 +43,10 @@ case class SAConfig(
   val addrW: Int =
     log2Ceil(inDepth); // Bits of an element address in the input memory
   val rowAddrW: Int = addrW - bankBits; // Bits of a row address inside a bank.
+  val outAddrW: Int = log2Ceil(
+    outDepth
+  ) // Bits of an element address in the result memory: cAddr and READ addresses.
+  val shiftW: Int = log2Ceil(accWidth) // Bits of the requantization shift
   val dimW: Int =
     16; // width, in bits, of the hardware registers and wires that hold matrix sizes
   val arrayLatency: Int =
@@ -56,7 +62,7 @@ case class SAConfig(
     s"array size must be at least 1x1, got ${rows}x${cols}"
   )
   require(
-    inWidth >= 1 && accWidth >= 1 && inDepth >= 1 && maxM >= 1,
+    inWidth >= 1 && accWidth >= 1 && inDepth >= 1 && outDepth >= 1 && maxM >= 1,
     s"widths and depths must be positive (inWidth=$inWidth, accWidth=$accWidth, " +
       s"inDepth=$inDepth, maxM=$maxM)"
   )
@@ -93,5 +99,17 @@ case class SAConfig(
     accWidth >= 2 * inWidth + dimW,
     s"accWidth = $accWidth may overflow: a sum of up to 2^$dimW products of $inWidth-bit " +
       s"values needs ${2 * inWidth + dimW} bits"
+  )
+  require(
+    outDepth % cols == 0,
+    s"outDepth ($outDepth) must be a multiple of cols ($cols)"
+  )
+  require(
+    outAddrW <= 16,
+    s"outDepth = $outDepth needs $outAddrW address bits, but addresses are 2 bytes in the host protocol"
+  )
+  require(
+    shiftW <= 8,
+    s"shiftW = $shiftW does not fit in the 1-byte shift field of MATMUL"
   )
 }

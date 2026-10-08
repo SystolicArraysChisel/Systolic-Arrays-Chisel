@@ -13,6 +13,7 @@ class AddTester extends AnyFlatSpec with ChiselScalatestTester {
     assert(c.rows == 4 && c.cols == 4)
     assert(c.banks == 4 && c.bankBits == 2)
     assert(c.addrW == 12 && c.rowAddrW == 10)
+    assert(c.outAddrW == 12 && c.shiftW == 5)
     assert(c.dimW == 16)
     assert(c.arrayLatency == 7)
     assert(c.dspCount == 16)

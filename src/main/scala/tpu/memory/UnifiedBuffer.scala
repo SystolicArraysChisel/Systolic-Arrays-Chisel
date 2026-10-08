@@ -83,5 +83,15 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     val resultMem = Seq.fill(c.cols) {
         SyncReadMem(c.outDepth / c.cols, c.accT)
     }
+
+    io.resWr.ready := true.B
+
+    when (io.resWr.fire) {
+        for (col <- 0 until c.cols) {
+            resultMem(col).write(
+                io.resWr.bits.rowAddr, 
+                io.resWr.bits.data(col))
+        }
+    }
 }
 

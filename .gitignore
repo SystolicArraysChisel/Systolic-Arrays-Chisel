@@ -1,0 +1,44 @@
+# --- sbt / Scala build output ---
+target/
+project/target/
+project/project/
+
+# --- editor and Scala tooling caches (Metals, Bloop, BSP, scala-cli) ---
+.bloop/
+.bsp/
+.metals/
+.scala-build/
+metals.sbt
+.vscode/
+.idea/
+
+# --- generated hardware and simulation output ---
+generated/
+build/
+test_run_dir/
+*.vcd
+*.fst
+
+# --- Vivado ---
+.Xil/
+*.jou
+*.log
+*.str
+vivado*.backup.*
+
+# --- Python host ---
+__pycache__/
+*.pyc
+.venv/
+
+# --- LaTeX (if the spec lives in the repo) ---
+*.aux
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+
+# --- OS ---
+.DS_Store
+Thumbs.db

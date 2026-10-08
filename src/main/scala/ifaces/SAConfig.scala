@@ -118,4 +118,8 @@ case class SAConfig(
     shiftW <= 8,
     s"shiftW = $shiftW does not fit in the 1-byte shift field of MATMUL"
   )
+  require(
+    dspCount <= 240,
+    s"dspCount must be at most 240 for the MVP, got $dspCount"
+  )
 }

@@ -1,4 +1,4 @@
-package ifaces
+package tpu.io
 
 /** Byte-level protocol between the Python host and the CommandDecoder.
   * Multi-byte fields are little-endian.

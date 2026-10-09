@@ -80,6 +80,10 @@ case class SAConfig(
       s"inDepth=$inDepth, maxM=$maxM)"
   )
   require(
+    isPow2(inDepth) && isPow2(outDepth),
+    s"inDepth ($inDepth) and outDepth ($outDepth) must be powers of two"
+  )
+  require(
     dataflow == WeightStationary,
     s"MVP: only WeightStationary is supported, got $dataflow"
   )

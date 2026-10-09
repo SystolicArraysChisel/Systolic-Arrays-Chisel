@@ -10,13 +10,16 @@ import ifaces._
   */
 class UnifiedBuffer(c: SAConfig) extends Module {
     val io = IO(new Bundle {
+        // CommandDecoder <-> UnifiedBuffer interface
         val hostWr = Flipped(Decoupled(new BufWritePort(c)))
         val hostRdReq = Flipped(Decoupled(new BufReadReq(c)))
         val hostRdResp = Decoupled(c.accT)
 
+        // DataMover <-> UnifiedBuffer interface
         val mvRdReq = Flipped(Decoupled(new BufRowReq(c)))
         val mvRdResp = Decoupled(Vec(c.banks, c.inT))
 
+        // Accumulator <-> UnifiedBuffer interface
         val resWr = Flipped(Decoupled(new BufResultWrite(c)))
     })
 
@@ -32,10 +35,10 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     }
 
     /**
-      * Write logic for the input memory. The host can always write to it, 
-      * and the data mover can always read from it.
+      * Write logic for the input memory.
+      * The host can always write to the input memory.
       */
-    io.hostWr.ready := true.B // The host can always write to the input memory
+    io.hostWr.ready := true.B
 
     val hostWrBank = Wire(UInt(c.bankBits.W))
     val hostWrRow = Wire(UInt((c.addrW - c.bankBits).W))
@@ -71,6 +74,7 @@ class UnifiedBuffer(c: SAConfig) extends Module {
             io.mvRdReq.valid)
     }
     io.mvRdResp.bits := mvRdRespVec
+    // The valid signal is delayed by one cycle to account for the read latency of SyncReadMem
     io.mvRdResp.valid := RegNext(io.mvRdReq.valid, false.B)
 
 
@@ -84,6 +88,9 @@ class UnifiedBuffer(c: SAConfig) extends Module {
         SyncReadMem(c.outDepth / c.cols, c.accT)
     }
 
+    /**
+      * Write logic for the result memory. 
+      */
     io.resWr.ready := true.B
 
     when (io.resWr.fire) {
@@ -93,5 +100,35 @@ class UnifiedBuffer(c: SAConfig) extends Module {
                 io.resWr.bits.data(col))
         }
     }
-}
 
+    /**
+      * Read logic for the result memory. 
+      * The host can always read from the result memory.
+      */
+    io.hostRdReq.ready := true.B
+    
+    val hostRdBank = Wire(UInt(c.bankBits.W))
+    val hostRdRow = Wire(UInt((c.outAddrW - c.bankBits).W))
+
+    if (c.bankBits > 0) {
+        hostRdBank := io.hostRdReq.bits.addr(c.bankBits - 1, 0)
+        hostRdRow := io.hostRdReq.bits.addr(c.outAddrW - 1, c.bankBits)
+    } else {
+        hostRdBank := 0.U
+        hostRdRow := io.hostRdReq.bits.addr(c.outAddrW - 1, 0)
+    }
+
+    val hostRdRespVec = Wire(Vec(c.cols, c.accT))
+
+    for (col <- 0 until c.cols) {
+        hostRdRespVec(col) := resultMem(col).read(
+            hostRdRow, 
+            io.hostRdReq.valid && (hostRdBank === col.U))
+    }
+
+    // The valid signal is delayed by one cycle to account for the read latency of SyncReadMem
+    io.hostRdResp.valid := RegNext(io.hostRdReq.valid, false.B)
+    // The bank selection is also delayed by one cycle to match the valid signal
+    val delayedBank = RegEnable(hostRdBank, io.hostRdReq.valid)
+    io.hostRdResp.bits := hostRdRespVec(delayedBank)
+}

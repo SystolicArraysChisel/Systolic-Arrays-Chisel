@@ -51,7 +51,7 @@ case class SAConfig(
   val outAddrW: Int = log2Ceil(
     outDepth
   ) // Bits of an element address in the result memory.
-  val colAddrW: Int = outAddrW - colBits; // Bits of a column address inside the result memory.
+  val outRowAddrW: Int = outAddrW - colBits; // Bits of a row address inside the result memory.
 
   val shiftW: Int = log2Ceil(accWidth) // Bits of the requantization shift
   val dimW: Int =

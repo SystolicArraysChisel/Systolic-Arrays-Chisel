@@ -17,6 +17,6 @@ class BufRowReq(c: SAConfig) extends Bundle {
   * single cycle.
   */
 class BufResultWrite(c: SAConfig) extends Bundle {
-  val rowAddr = UInt((c.outAddrW - log2Ceil(c.cols)).W)
+  val rowAddr = UInt(c.outRowAddrW.W)
   val data = Vec(c.cols, c.accT)
 }

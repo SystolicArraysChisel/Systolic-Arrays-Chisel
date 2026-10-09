@@ -41,7 +41,7 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     io.hostWr.ready := true.B
 
     val hostWrBank = Wire(UInt(c.bankBits.W))
-    val hostWrRow = Wire(UInt((c.addrW - c.bankBits).W))
+    val hostWrRow = Wire(UInt((c.rowAddrW).W))
 
     if (c.bankBits > 0) {
         hostWrBank := io.hostWr.bits.addr(c.bankBits - 1, 0)
@@ -107,14 +107,14 @@ class UnifiedBuffer(c: SAConfig) extends Module {
       */
     io.hostRdReq.ready := true.B
     
-    val hostRdBank = Wire(UInt(c.bankBits.W))
-    val hostRdRow = Wire(UInt((c.outAddrW - c.bankBits).W))
+    val hostRdCol = Wire(UInt(c.colBits.W))
+    val hostRdRow = Wire(UInt(c.outRowAddrW.W))
 
-    if (c.bankBits > 0) {
-        hostRdBank := io.hostRdReq.bits.addr(c.bankBits - 1, 0)
-        hostRdRow := io.hostRdReq.bits.addr(c.outAddrW - 1, c.bankBits)
+    if (c.colBits > 0) {
+        hostRdCol := io.hostRdReq.bits.addr(c.colBits - 1, 0)
+        hostRdRow := io.hostRdReq.bits.addr(c.outAddrW - 1, c.colBits)
     } else {
-        hostRdBank := 0.U
+        hostRdCol := 0.U
         hostRdRow := io.hostRdReq.bits.addr(c.outAddrW - 1, 0)
     }
 
@@ -123,12 +123,12 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     for (col <- 0 until c.cols) {
         hostRdRespVec(col) := resultMem(col).read(
             hostRdRow, 
-            io.hostRdReq.valid && (hostRdBank === col.U))
+            io.hostRdReq.valid && (hostRdCol === col.U))
     }
 
     // The valid signal is delayed by one cycle to account for the read latency of SyncReadMem
     io.hostRdResp.valid := RegNext(io.hostRdReq.valid, false.B)
-    // The bank selection is also delayed by one cycle to match the valid signal
-    val delayedBank = RegEnable(hostRdBank, io.hostRdReq.valid)
-    io.hostRdResp.bits := hostRdRespVec(delayedBank)
+    // The column selection is also delayed by one cycle to match the valid signal
+    val delayedCol = RegEnable(hostRdCol, io.hostRdReq.valid)
+    io.hostRdResp.bits := hostRdRespVec(delayedCol)
 }

@@ -26,6 +26,20 @@ class UnifiedBuffer(c: SAConfig) extends Module {
 
 
     /**
+      * Split an address into a bank/column selection and 
+      * a row address inside that bank/column.
+      */
+    def splitAddr(addr: UInt, bits: Int): (UInt, UInt) = {
+        if (bits > 0) {
+            (addr(bits - 1, 0), addr(addr.getWidth - 1, bits))
+        } else {
+            (0.U, addr)
+        }
+    }
+
+
+
+    /**
       * Input memory for A and B. Written element by element by 
       * the host (hostWr, always ready), read one whole row per 
       * cycle by the data mover.
@@ -40,16 +54,7 @@ class UnifiedBuffer(c: SAConfig) extends Module {
       */
     io.hostWr.ready := true.B
 
-    val hostWrBank = Wire(UInt(c.bankBits.W))
-    val hostWrRow = Wire(UInt((c.rowAddrW).W))
-
-    if (c.bankBits > 0) {
-        hostWrBank := io.hostWr.bits.addr(c.bankBits - 1, 0)
-        hostWrRow := io.hostWr.bits.addr(c.addrW - 1, c.bankBits)
-    } else {
-        hostWrBank := 0.U
-        hostWrRow := io.hostWr.bits.addr(c.addrW - 1, 0)
-    }
+    val (hostWrBank, hostWrRow) = splitAddr(io.hostWr.bits.addr, c.bankBits)
 
     when (io.hostWr.fire) {
         for (b <- 0 until c.banks) {
@@ -77,6 +82,9 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     // The valid signal is delayed by one cycle to account for the read latency of SyncReadMem
     io.mvRdResp.valid := RegNext(io.mvRdReq.valid, false.B)
 
+    assert(!io.mvRdResp.valid || io.mvRdResp.ready, 
+        "UnifiedBuffer: mvRdResp not accepted, DataMover must always be ready")
+
 
 
     /**
@@ -103,32 +111,37 @@ class UnifiedBuffer(c: SAConfig) extends Module {
 
     /**
       * Read logic for the result memory. 
-      * The host can always read from the result memory.
       */
-    io.hostRdReq.ready := true.B
-    
-    val hostRdCol = Wire(UInt(c.colBits.W))
-    val hostRdRow = Wire(UInt(c.outRowAddrW.W))
+    val (hostRdCol, hostRdRow) = splitAddr(io.hostRdReq.bits.addr, c.colBits)
 
-    if (c.colBits > 0) {
-        hostRdCol := io.hostRdReq.bits.addr(c.colBits - 1, 0)
-        hostRdRow := io.hostRdReq.bits.addr(c.outAddrW - 1, c.colBits)
-    } else {
-        hostRdCol := 0.U
-        hostRdRow := io.hostRdReq.bits.addr(c.outAddrW - 1, 0)
-    }
+    val rdFireD = RegNext(io.hostRdReq.fire, false.B)
+    val rdColD = RegEnable(hostRdCol, io.hostRdReq.fire)
+    val respValid = RegInit(false.B)
+    val respData = Reg(c.accT)
 
     val hostRdRespVec = Wire(Vec(c.cols, c.accT))
 
     for (col <- 0 until c.cols) {
         hostRdRespVec(col) := resultMem(col).read(
             hostRdRow, 
-            io.hostRdReq.valid && (hostRdCol === col.U))
+            io.hostRdReq.fire && (hostRdCol === col.U))
     }
 
-    // The valid signal is delayed by one cycle to account for the read latency of SyncReadMem
-    io.hostRdResp.valid := RegNext(io.hostRdReq.valid, false.B)
-    // The column selection is also delayed by one cycle to match the valid signal
-    val delayedCol = RegEnable(hostRdCol, io.hostRdReq.valid)
-    io.hostRdResp.bits := hostRdRespVec(delayedCol)
+    val rdRaw = if (c.cols == 1) {
+        hostRdRespVec(0)
+    } else {
+        hostRdRespVec(rdColD)
+    }
+
+    when (rdFireD) {
+        respData := rdRaw
+        respValid := true.B
+    }
+    when (io.hostRdResp.fire) {
+        respValid := false.B
+    }
+
+    io.hostRdReq.ready := !rdFireD && !respValid
+    io.hostRdResp.bits := respData
+    io.hostRdResp.valid := respValid
 }

@@ -248,3 +248,18 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 }
+
+/**
+	* TODO: Add tests, including:
+	* - Burst reading of mvRdReq. This is the real use of the DataMover: 
+	*   one row per loop.
+	* - Reset with an in-flight read (cycle 1, rdFireD = 1). My reset test 
+	* 	only covers the case respValid = 1. Here I should check that a read 
+	* 	that has already started does not produce a response after the reset.
+	* - Request submitted during backpressure. In test 3, I only check that 
+	* 	hostRdReq.ready is low. Also check that a request with a high valid 
+	* 	(to another address) is not accepted and does not alter the data.
+	* - Wider addresses. Now only use lines 0-3. Add at least the last valid 
+	* 	address (inDepth = 1 and outDepth = 1) to match the widths of fields 
+	* 	with inDepth = 64 and a larger depth, such as 256.
+	*/

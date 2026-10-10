@@ -27,6 +27,7 @@ class DataMover(c: SAConfig) extends Module {
   })
 
 
+
   // The data mover requests weights, optionally waits, and then requests activations.
   val idle :: weightReq :: actGap :: actReq :: Nil = Enum(4)
 	val state = RegInit(idle)
@@ -49,6 +50,7 @@ class DataMover(c: SAConfig) extends Module {
 	val total = Reg(UInt((c.dimW + 1).W))
 
 
+
   // Only one command can be processed at a time.
 	io.cmd.ready := !busy
 
@@ -60,6 +62,7 @@ class DataMover(c: SAConfig) extends Module {
 		aAddr
 	) >> c.bankBits
 
+	// Always ready to accept a response by the unified buffer.
 	io.rdResp.ready := true.B
 
 	// The first response beats contain weights; the remaining beats contain activations.
@@ -73,11 +76,12 @@ class DataMover(c: SAConfig) extends Module {
 	when(io.rdResp.fire) {
 		when(respCount === total - 1.U) {
 			respCount := 0.U
-			busy      := false.B
+			busy := false.B
 		}.otherwise {
 			respCount := respCount + 1.U
 		}
 	}
+
 
 
   /**
@@ -90,23 +94,27 @@ class DataMover(c: SAConfig) extends Module {
 		is(idle) {
 			when(io.cmd.fire) {
 				aAddr := io.cmd.bits.aAddr
-				bAddr := (io.cmd.bits.bAddr + (c.rows - 1).U * io.cmd.bits.ldB)(c.addrW - 1, 0)
+				bAddr := (io.cmd.bits.bAddr + (c.rows - 1).U * io.cmd.bits.ldB)
 				ldA := io.cmd.bits.ldA
 				ldB := io.cmd.bits.ldB
 				m := io.cmd.bits.m
-				total       := c.rows.U +& io.cmd.bits.m
+
+				total := c.rows.U + io.cmd.bits.m
+				busy := true.B
+				
 				weightCount := 0.U
-				actCount    := 0.U
-				busy        := true.B
-				state       := weightReq
+				actCount := 0.U
+
+				state := weightReq
 			}
 		}
 
 		is(weightReq) {
       // Issue one request per weight row and move towards the first row.
 			when(io.rdReq.fire) {
-				bAddr := bAddr -% ldB
+				bAddr := bAddr - ldB
 				weightCount := weightCount + 1.U
+				
 				when(weightCount === (c.rows - 1).U) {
 					when(m === 0.U) { 
 						state := idle 
@@ -137,7 +145,7 @@ class DataMover(c: SAConfig) extends Module {
 		is(actReq) {
       // Issue one request per activation row and advance by the A row stride.
 			when(io.rdReq.fire) {
-				aAddr := aAddr +% ldA
+				aAddr := aAddr + ldA
 				actCount := actCount + 1.U
 				when(actCount === m - 1.U) { 
 					state := idle 

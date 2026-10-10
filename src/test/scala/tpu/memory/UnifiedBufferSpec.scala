@@ -23,8 +23,10 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.hostWr.valid.poke(false.B)
     dut.io.hostRdReq.valid.poke(false.B)
     dut.io.hostRdResp.ready.poke(true.B)
+
     dut.io.mvRdReq.valid.poke(false.B)
-    dut.io.mvRdResp.ready.poke(true.B)
+    dut.io.mvRdResp.ready.poke(true.B) // DataMover always accepts a row read.
+
     dut.io.resWr.valid.poke(false.B)
   }
 
@@ -37,7 +39,9 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.hostWr.bits.addr.poke(addr.U)
     dut.io.hostWr.bits.data.poke(data.S)
     dut.io.hostWr.valid.poke(true.B)
+
     dut.io.hostWr.ready.expect(true.B)
+
     dut.clock.step()
     dut.io.hostWr.valid.poke(false.B)
   }
@@ -49,13 +53,18 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
   ): Seq[Int] = {
     dut.io.mvRdReq.bits.rowAddr.poke(rowAddr.U)
     dut.io.mvRdReq.valid.poke(true.B)
+
     dut.io.mvRdReq.ready.expect(true.B)
+
     dut.clock.step()
     dut.io.mvRdReq.valid.poke(false.B)
+
     dut.io.mvRdResp.valid.expect(true.B)
     val result = (0 until c.banks).map { bank =>
+			// Conversion from SInt to Int is done using peek().litValue.toInt.
       dut.io.mvRdResp.bits(bank).peek().litValue.toInt
     }
+		
     dut.clock.step()
     result
   }
@@ -71,7 +80,9 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.resWr.bits.data(col).poke(value.S)
     }
     dut.io.resWr.valid.poke(true.B)
+
     dut.io.resWr.ready.expect(true.B)
+
     dut.clock.step()
     dut.io.resWr.valid.poke(false.B)
   }
@@ -84,8 +95,10 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.hostRdReq.bits.addr.poke(addr.U)
     dut.io.hostRdReq.valid.poke(true.B)
     dut.io.hostRdReq.ready.expect(true.B)
+
     dut.clock.step()
     dut.io.hostRdReq.valid.poke(false.B)
+
     // One cycle for the synchronous memory read and one for response capture.
     dut.clock.step()
   }
@@ -96,11 +109,14 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
         clearInputs(dut)
 
         val row = 3
+
         (0 until c.banks).foreach { bank =>
+					// Write one element to each bank in the selected row.
           writeInput(dut, c, bank + (row << c.bankBits), 20 + bank)
         }
 
         val actual = readInputRow(dut, c, row)
+
         assert(actual == (0 until c.banks).map(bank => 20 + bank))
       }
     }
@@ -113,13 +129,16 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
 
         val row = 2
         val expected = (0 until c.cols).map(col => 100 + col)
+
         writeResultRow(dut, c, row, expected)
 
         (0 until c.cols).foreach { col =>
           requestHostRead(dut, c, col + (row << c.colBits))
+
           dut.io.hostRdResp.valid.expect(true.B)
           dut.io.hostRdResp.bits.expect(expected(col).S)
           dut.io.hostRdResp.ready.poke(true.B)
+
           dut.clock.step()
         }
       }
@@ -134,26 +153,38 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
         val row = 1
         val col = c.cols - 1
         val expected = 73
+
         writeResultRow(dut, c, row, Seq.fill(c.cols)(expected))
+
         requestHostRead(dut, c, col + (row << c.colBits))
 
-        dut.io.hostRdResp.ready.poke(false.B)
-        dut.io.hostRdReq.ready.expect(false.B)
+				// Backpressure the response.
+        dut.io.hostRdResp.ready.poke(false.B) 
+
+				// The request is still pending because the response is not accepted.
+        dut.io.hostRdReq.ready.expect(false.B) 
+				// The response is valid and holds the expected value.
         dut.io.hostRdResp.valid.expect(true.B)
         val heldBits = dut.io.hostRdResp.bits.peek().litValue
 
-        for (_ <- 0 until 10) {
+        for (_ <- 0 until 10) { // Hold the response for 10 cycles.
           dut.io.hostRdResp.valid.expect(true.B)
           dut.io.hostRdResp.bits.expect(heldBits.S)
           dut.io.hostRdReq.ready.expect(false.B)
+
           dut.clock.step()
         }
 
-        dut.io.hostRdResp.ready.poke(true.B)
+        dut.io.hostRdResp.ready.poke(true.B) // Accept the response.
+
         dut.io.hostRdResp.valid.expect(true.B)
         dut.io.hostRdResp.bits.expect(expected.S)
+
         dut.clock.step()
+				// The response is no longer valid after being accepted.
         dut.io.hostRdResp.valid.expect(false.B)
+				// The request is now ready to accept a new read request.
+				dut.io.hostRdReq.ready.expect(true.B) 
       }
     }
   }
@@ -165,22 +196,31 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
 
         val row = 0
         val values = (0 until c.cols).map(col => 200 + col)
+
         writeResultRow(dut, c, row, values)
 
         (0 until c.cols).foreach { col =>
           requestHostRead(dut, c, col)
+
           dut.io.hostRdResp.valid.expect(true.B)
           dut.io.hostRdResp.bits.expect(values(col).S)
+
+					// Backpressure the response every other column to test alignment.
           dut.io.hostRdResp.ready.poke(col % 2 == 0)
+
           dut.clock.step()
 
           if (col % 2 == 0) {
+						// The response was accepted, so there isn't a pending response.
             dut.io.hostRdResp.valid.expect(false.B)
           } else {
             dut.io.hostRdResp.valid.expect(true.B)
             dut.io.hostRdResp.bits.expect(values(col).S)
+
             dut.io.hostRdResp.ready.poke(true.B)
+
             dut.clock.step()
+						dut.io.hostRdResp.valid.expect(false.B)
           }
         }
       }
@@ -193,7 +233,9 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
         clearInputs(dut)
 
         writeResultRow(dut, c, rowAddr = 0, Seq.fill(c.cols)(55))
+
         requestHostRead(dut, c, addr = 0)
+
         dut.io.hostRdResp.valid.expect(true.B)
 
         dut.reset.poke(true.B)

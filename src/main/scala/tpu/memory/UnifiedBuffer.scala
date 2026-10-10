@@ -91,6 +91,7 @@ class UnifiedBuffer(c: SAConfig) extends Module {
   // The response is valid one cycle after the request.
   io.mvRdResp.valid := RegNext(io.mvRdReq.valid, false.B)
 
+  // No backpressure on DataMover: it must always be ready to accept the response.
   assert(!io.mvRdResp.valid || io.mvRdResp.ready, 
     "UnifiedBuffer: mvRdResp not accepted, DataMover must always be ready")
 

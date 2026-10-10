@@ -19,11 +19,3 @@ class TileCmd(c: SAConfig) extends Bundle {
 	val ldB = UInt(c.dimW.W)
 	val m = UInt(c.dimW.W)
 }
-
-/**
-	* Asks the input memory for one full row
-	* (one value per bank) in a single cycle.
-	*/
-class BufRowReq(c: SAConfig) extends Bundle {
-  val rowAddr = UInt(c.rowAddrW.W)
-}

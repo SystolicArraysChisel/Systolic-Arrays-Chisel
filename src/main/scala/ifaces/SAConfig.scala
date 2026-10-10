@@ -37,15 +37,22 @@ case class SAConfig(
 
   val banks: Int =
     (rows max cols) * vecWidth; // Number of input-memory banks, i.e elements the data mover reads per cycle.
+
   val bankBits: Int = log2Ceil(
     banks
   ) // Bits of an element address that select the bank
   val addrW: Int =
     log2Ceil(inDepth); // Bits of an element address in the input memory
   val rowAddrW: Int = addrW - bankBits; // Bits of a row address inside a bank.
+
+  val colBits: Int = log2Ceil(
+    cols
+  ) // Bits of an element address that selects the column of a PE
   val outAddrW: Int = log2Ceil(
     outDepth
-  ) // Bits of an element address in the result memory: cAddr and READ addresses.
+  ) // Bits of an element address in the result memory.
+  val outRowAddrW: Int = outAddrW - colBits; // Bits of a row address inside the result memory.
+
   val shiftW: Int = log2Ceil(accWidth) // Bits of the requantization shift
   val dimW: Int =
     16; // width, in bits, of the hardware registers and wires that hold matrix sizes
@@ -71,6 +78,10 @@ case class SAConfig(
     inWidth >= 1 && accWidth >= 1 && inDepth >= 1 && outDepth >= 1 && maxM >= 1,
     s"widths and depths must be positive (inWidth=$inWidth, accWidth=$accWidth, " +
       s"inDepth=$inDepth, maxM=$maxM)"
+  )
+  require(
+    isPow2(inDepth) && isPow2(outDepth),
+    s"inDepth ($inDepth) and outDepth ($outDepth) must be powers of two"
   )
   require(
     dataflow == WeightStationary,

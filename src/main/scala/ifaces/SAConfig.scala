@@ -63,7 +63,7 @@ case class SAConfig(
     * cycles after the last wIn beat. Depends on Andreea's PE design: TO
     * CONFIRM. 0 for now.
     */
-  val weightToActGap: Int = 0
+  val weightToActGap: Int = 0 // Number of empty cycles between the final wIn and first aIn beat.
   // WARNING: Comes from Andreea’s schedule function may be subject to change
   val dspCount: Int = rows * cols * vecWidth; /* Number of multipliers, one DSP
   each. Used by the checks and the resource reports */
@@ -73,6 +73,10 @@ case class SAConfig(
   require(
     rows >= 1 && cols >= 1,
     s"array size must be at least 1x1, got ${rows}x${cols}"
+  )
+  require(
+    weightToActGap >= 0,
+    s"weightToActGap must be non-negative, got $weightToActGap"
   )
   require(
     inWidth >= 1 && accWidth >= 1 && inDepth >= 1 && outDepth >= 1 && maxM >= 1,

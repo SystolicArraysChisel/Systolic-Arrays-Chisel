@@ -69,8 +69,9 @@ class DataMover(c: SAConfig) extends Module {
 	val isW = respCount < c.rows.U
 	io.wOut.valid := io.rdResp.valid && isW
 	io.aOut.valid := io.rdResp.valid && !isW
-	io.wOut.bits := io.rdResp.bits
-	io.aOut.bits := io.rdResp.bits
+	// TODO: This is not correct if banks > cols or rows (to handle after MVP).
+	io.wOut.bits := VecInit(io.rdResp.bits.take(c.cols))
+	io.aOut.bits := VecInit(io.rdResp.bits.take(c.rows))
 
   // Count accepted responses and release the command interface after the final beat.
 	when(io.rdResp.fire) {

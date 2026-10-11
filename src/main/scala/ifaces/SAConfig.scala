@@ -137,4 +137,8 @@ case class SAConfig(
     dspCount <= 240,
     s"dspCount must be at most 240 for the MVP, got $dspCount"
   )
+  require(
+  banks >= rows && banks >= cols,
+  s"banks ($banks) must cover both rows ($rows) and cols ($cols)"
+)
 }

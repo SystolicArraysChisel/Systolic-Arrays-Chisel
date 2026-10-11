@@ -130,9 +130,16 @@ class DataMoverSpec extends AnyFlatSpec with ChiselScalatestTester {
       }
 
       dut.io.rdResp.valid.poke(false.B)
-			
+
       dut.io.rdReq.valid.expect(false.B)
       dut.io.cmd.ready.expect(true.B)
     }
   }
 }
+
+/**
+	* TODO: Add tests, including:
+	* - weightToActGap > 0.
+	* - One activation row (m = 1).
+	* - No response from memory for some cycles.
+	*/

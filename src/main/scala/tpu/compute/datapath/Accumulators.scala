@@ -24,7 +24,7 @@ class Accumulators(c: SAConfig) extends Module {
   val last = RegInit(false.B)
   val cAddr = RegInit(0.U(c.outAddrW.W))
   val ldC = RegInit(0.U(c.dimW.W))
-  
+
   // Keep the current output row address to avoid multiplying by writeCounter.
   val rowAddr = RegInit(0.U(c.outAddrW.W))
   
@@ -157,3 +157,12 @@ class Accumulators(c: SAConfig) extends Module {
     }
   }
 }
+
+/**
+  * TODO: Accumulators in too big registers. 
+  * maxM × cols × 32 flip-flops, and with RegInit (the spec says no reset 
+  * is needed). With maxM = 256 and cols = 8, that's 65,536 FFs, about half 
+  * of the 126,800 of the A7-100T, plus a 256:1 mux on 256 bits. For the MVP 
+  * it's fine with small maxM (32 or 64) and Reg(Vec(...)) without reset; 
+  * then switch to a SyncReadMem (BRAM) with pipelined read-modify-write.
+  */

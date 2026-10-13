@@ -29,8 +29,8 @@ class Accumulators(c: SAConfig) extends Module {
   val requant = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
 
-  val ctrl :: accum :: write :: Nil = Enum(3)
-  val state = RegInit(ctrl)
+  val sCtrl :: sAccum :: sWrite :: Nil = Enum(3)
+  val state = RegInit(sCtrl)
 
   val accReg = RegInit(
     VecInit(Seq.fill(c.maxM)(
@@ -40,21 +40,21 @@ class Accumulators(c: SAConfig) extends Module {
   val rowCounter = RegInit(0.U(c.dimW.W))
   val writeCounter = RegInit(0.U(c.dimW.W))
 
-  io.ctrl.ready := (state === ctrl)
-  io.resWr.valid := (state === write)
+  io.ctrl.ready := (state === sCtrl)
+  io.resWr.valid := (state === sWrite)
   io.done.valid := false.B
   io.resWr.bits := DontCare
   io.done.bits := false.B
 
   assert(
-    !(io.in.valid && state =/= accum), 
+    !(io.in.valid && state =/= sAccum), 
     "array output while accumulators not ready"
   )
 
 
 
   switch(state) {
-    is(ctrl) {
+    is(sCtrl) {
       when(io.ctrl.fire) {
         first := io.ctrl.bits.first
         last := io.ctrl.bits.last
@@ -67,11 +67,11 @@ class Accumulators(c: SAConfig) extends Module {
 
         rowCounter := 0.U
 
-        state := accum
+        state := sAccum
       }
     }
 
-    is(accum) {
+    is(sAccum) {
       when(io.in.valid) {
         when(first) {
           accReg(rowCounter) := io.in.bits
@@ -85,9 +85,9 @@ class Accumulators(c: SAConfig) extends Module {
           io.done.valid := true.B
           when(last) {
             writeCounter := 0.U
-            state := write
+            state := sWrite
           } .otherwise {
-            state := ctrl
+            state := sCtrl
           }
         } .otherwise(
           rowCounter := rowCounter + 1.U
@@ -95,7 +95,7 @@ class Accumulators(c: SAConfig) extends Module {
       }
     }
 
-    is(write) {
+    is(sWrite) {
       io.resWr.bits.rowAddr := (cAddr + writeCounter * ldC) / c.cols.U
 
       for (col <- 0 until c.cols) {
@@ -140,7 +140,7 @@ class Accumulators(c: SAConfig) extends Module {
 
       when(io.resWr.fire) {
         when(writeCounter === m - 1.U) {
-          state := ctrl
+          state := sCtrl
         } .otherwise {
           writeCounter := writeCounter + 1.U
         }

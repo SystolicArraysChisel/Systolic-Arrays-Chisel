@@ -24,6 +24,10 @@ class Accumulators(c: SAConfig) extends Module {
   val last = RegInit(false.B)
   val cAddr = RegInit(0.U(c.outAddrW.W))
   val ldC = RegInit(0.U(c.dimW.W))
+  
+  // Keep the current output row address to avoid multiplying by writeCounter.
+  val rowAddr = RegInit(0.U(c.outAddrW.W))
+  
   val m = RegInit(0.U(c.dimW.W))
   val relu = RegInit(false.B)
   val requant = RegInit(false.B)
@@ -85,6 +89,8 @@ class Accumulators(c: SAConfig) extends Module {
           io.done.valid := true.B
           when(last) {
             writeCounter := 0.U
+            // cAddr and ldC are multiples of cols, so division becomes a shift.
+            rowAddr := cAddr >> log2Ceil(c.cols)
             state := sWrite
           } .otherwise {
             state := sCtrl
@@ -96,7 +102,7 @@ class Accumulators(c: SAConfig) extends Module {
     }
 
     is(sWrite) {
-      io.resWr.bits.rowAddr := (cAddr + writeCounter * ldC) / c.cols.U
+      io.resWr.bits.rowAddr := rowAddr
 
       for (col <- 0 until c.cols) {
         val value = accReg(writeCounter)(col)
@@ -139,6 +145,9 @@ class Accumulators(c: SAConfig) extends Module {
       }
 
       when(io.resWr.fire) {
+        // Incrementing replaces (cAddr + writeCounter * ldC) / c.cols.U.
+        rowAddr := rowAddr + (ldC >> log2Ceil(c.cols))
+
         when(writeCounter === m - 1.U) {
           state := sCtrl
         } .otherwise {

@@ -43,6 +43,13 @@ class Accumulators(c: SAConfig) extends Module {
   io.ctrl.ready := (state === ctrl)
   io.resWr.valid := (state === write)
   io.done.valid := false.B
+  io.resWr.bits := DontCare
+  io.done.bits := false.B
+
+  assert(
+    !(io.in.valid && state =/= accum), 
+    "array output while accumulators not ready"
+  )
 
 
 
@@ -75,11 +82,12 @@ class Accumulators(c: SAConfig) extends Module {
         }
 
         when(rowCounter === m - 1.U) {
+          io.done.valid := true.B
           when(last) {
             writeCounter := 0.U
             state := write
           } .otherwise {
-            io.done.valid := true.B
+            state := ctrl
           }
         } .otherwise(
           rowCounter := rowCounter + 1.U
@@ -97,6 +105,7 @@ class Accumulators(c: SAConfig) extends Module {
         // overflow during rounding and saturation.
         val widenedValue = Cat(value.head(1), value).asSInt
 
+        // Round the value before shifting to avoid losing precision.
         val rounding = Mux(
           shift === 0.U,
           0.S((c.accWidth + 1).W),
@@ -104,8 +113,10 @@ class Accumulators(c: SAConfig) extends Module {
         )
         val rounded = widenedValue + rounding
 
+        // Shift the rounded value to get the final result.
         val requantized = (rounded >> shift).asSInt
 
+        // Saturate the requantized value to the range [-127, 127].
         val maxValue = 127.S((c.accWidth + 1).W)
         val minValue = (-127).S((c.accWidth + 1).W)
         val saturated = Mux(
@@ -119,6 +130,7 @@ class Accumulators(c: SAConfig) extends Module {
 
         val processed = Mux(requant, saturated, widenedValue)
 
+        // Apply ReLU if enabled, otherwise use the processed value directly.
         io.resWr.bits.data(col) := Mux(
           relu,
           Mux(processed < 0.S, 0.S, processed),
@@ -128,7 +140,6 @@ class Accumulators(c: SAConfig) extends Module {
 
       when(io.resWr.fire) {
         when(writeCounter === m - 1.U) {
-          io.done.valid := true.B
           state := ctrl
         } .otherwise {
           writeCounter := writeCounter + 1.U

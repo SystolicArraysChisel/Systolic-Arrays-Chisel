@@ -5,6 +5,15 @@ import chisel3.util._
 
 import ifaces._
 
+/**
+  * Accumulates partial results produced by the systolic array and writes
+  * completed output tiles to the unified buffer.
+  *
+  * The module accepts one control command for each accumulation phase. It
+  * stores the partial sums by row, optionally combines them with previously
+  * accumulated values, and applies requantization, saturation, and ReLU
+  * before writing the final results.
+  */
 class Accumulators(c: SAConfig) extends Module {
   val io = IO(new Bundle {
     // SystolicArray <-> Accumulators interface
@@ -19,7 +28,7 @@ class Accumulators(c: SAConfig) extends Module {
   })
 
 
-
+  // Control fields are latched when a new accumulation phase is accepted.
   val first = RegInit(false.B)
   val last = RegInit(false.B)
   val cAddr = RegInit(0.U(c.outAddrW.W))
@@ -28,14 +37,17 @@ class Accumulators(c: SAConfig) extends Module {
   // Keep the current output row address to avoid multiplying by writeCounter.
   val rowAddr = RegInit(0.U(c.outAddrW.W))
   
+  // Post-processing options for values written to the unified buffer.
   val m = RegInit(0.U(c.dimW.W))
   val relu = RegInit(false.B)
   val requant = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
 
+  // Control, accumulation, and write phases of the module.
   val sCtrl :: sAccum :: sWrite :: Nil = Enum(3)
   val state = RegInit(sCtrl)
 
+  // Temporary storage for the partial sums of the current output tile.
   val accReg = RegInit(
     VecInit(Seq.fill(c.maxM)(
       VecInit(Seq.fill(c.cols)(0.S(c.accWidth.W)))
@@ -50,6 +62,7 @@ class Accumulators(c: SAConfig) extends Module {
   io.resWr.bits := DontCare
   io.done.bits := false.B
 
+  // The systolic array may only provide data during the accumulation phase.
   assert(
     !(io.in.valid && state =/= sAccum), 
     "array output while accumulators not ready"
@@ -59,6 +72,7 @@ class Accumulators(c: SAConfig) extends Module {
 
   switch(state) {
     is(sCtrl) {
+      // Load the command for the next accumulation phase.
       when(io.ctrl.fire) {
         first := io.ctrl.bits.first
         last := io.ctrl.bits.last
@@ -77,6 +91,7 @@ class Accumulators(c: SAConfig) extends Module {
 
     is(sAccum) {
       when(io.in.valid) {
+        // The first tile initializes the accumulator; later tiles are added.
         when(first) {
           accReg(rowCounter) := io.in.bits
         } .otherwise {
@@ -88,6 +103,7 @@ class Accumulators(c: SAConfig) extends Module {
         when(rowCounter === m - 1.U) {
           io.done.valid := true.B
           when(last) {
+            // The final tile is followed by a write phase.
             writeCounter := 0.U
             // cAddr and ldC are multiples of cols, so division becomes a shift.
             rowAddr := cAddr >> log2Ceil(c.cols)
@@ -102,6 +118,7 @@ class Accumulators(c: SAConfig) extends Module {
     }
 
     is(sWrite) {
+      // Emit one accumulated row per handshake with the unified buffer.
       io.resWr.bits.rowAddr := rowAddr
 
       for (col <- 0 until c.cols) {

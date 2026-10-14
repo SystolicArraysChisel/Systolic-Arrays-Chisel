@@ -26,7 +26,7 @@ case class SAConfig(
     outDepth: Int =
       4096, // Number of accT words the result memory holds (C). Separate from the input memory.
     maxM: Int =
-      256 /* Depth of the accumulator memory (the Accumulators block below the array), in rows of C.
+      64 /* Depth of the accumulator memory (the Accumulators block below the array), in rows of C.
        * Partial sums of every row of C are stored there between K-tiles, so one MATMUL
        * can have at most maxM rows (m <= maxM). The host splits a larger A by rows into
        * several MATMULs. Unrelated to the PEs, which keep no sum. */

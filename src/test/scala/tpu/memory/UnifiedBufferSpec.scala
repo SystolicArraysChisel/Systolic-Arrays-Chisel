@@ -9,6 +9,8 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
 
   behavior of "UnifiedBuffer"
 
+
+
   private val configs = Seq(1, 2, 4, 8).map { size =>
     SAConfig(
       rows = size,
@@ -102,6 +104,8 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
     // One cycle for the synchronous memory read and one for response capture.
     dut.clock.step()
   }
+
+
 
   it should "write and read input rows for every supported array size" in {
     configs.foreach { c =>

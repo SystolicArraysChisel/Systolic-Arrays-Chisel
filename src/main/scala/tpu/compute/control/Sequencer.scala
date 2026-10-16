@@ -31,7 +31,8 @@ class Sequencer(c: SAConfig) extends Module {
   val sIdle :: sIssue :: sWait :: Nil = Enum(3)
   val state = RegInit(sIdle)
 
-  // Latched matrix addresses, dimensions, strides, and post-processing options.
+  // Latched matrix addresses, dimensions, strides, 
+  // and post-processing options.
   val aAddr = RegInit(0.U(c.addrW.W))
   val bAddr = RegInit(0.U(c.addrW.W))
   val cAddr = RegInit(0.U(c.outAddrW.W))
@@ -91,21 +92,19 @@ class Sequencer(c: SAConfig) extends Module {
 
   switch(state) {
     is(sIdle) {
-      // Latch a new matrix-multiplication instruction and start with its first tile.
+      // Latch a new matrix-multiplication instruction 
+      // and start with its first tile.
       when(io.instr.fire) {
         assert(io.instr.bits.op === Opcode.Matmul)
         aAddr := io.instr.bits.aAddr
         bAddr := io.instr.bits.bAddr
         cAddr := io.instr.bits.cAddr
-
         m := io.instr.bits.m
         k := io.instr.bits.k
         n := io.instr.bits.n
-
         ldA := io.instr.bits.ldA
         ldB := io.instr.bits.ldB
         ldC := io.instr.bits.ldC
-
         requant := io.instr.bits.requant
         relu := io.instr.bits.relu
         shift := io.instr.bits.shift
@@ -139,14 +138,17 @@ class Sequencer(c: SAConfig) extends Module {
     is(sWait) {
       // Wait for the accumulator before issuing the next tile.
       when(io.tileDone.valid) {
-        busyPeCycles := busyPeCycles + (m << log2Ceil(c.rows * c.cols))
+        busyPeCycles := busyPeCycles + 
+          (m << log2Ceil(c.rows * c.cols))
 
         accSent := false.B
         cmdSent := false.B
 
         // Complete the next K tile for the current output tile first.
-        when(!lastK)      { 
-          kOff := kOff + c.rows.U; state := sIssue 
+        when(!lastK) { 
+          kOff := kOff + c.rows.U
+          
+          state := sIssue 
         }
         .elsewhen(!lastN) {
           // Once K is complete, reset K and advance to the next N tile.
@@ -157,8 +159,14 @@ class Sequencer(c: SAConfig) extends Module {
         }
         .otherwise { 
           // The complete matrix multiplication has finished.
-          state := sIdle }
+          state := sIdle
+        }
       }
     }
   }
 }
+
+/**
+  * TODO: Improve performance by not waiting for the 
+  * accumulator to finish before issuing the next tile command.
+  */

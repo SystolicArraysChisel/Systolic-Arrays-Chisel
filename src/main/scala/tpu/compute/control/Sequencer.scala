@@ -5,6 +5,14 @@ import chisel3.util._
 
 import ifaces._
 
+/**
+  * Sequences tiled matrix-multiplication commands across the data mover
+  * and accumulator.
+  *
+  * The sequencer accepts one decoded instruction, issues the corresponding
+  * tile commands, and waits for the accumulator to finish each tile. It
+  * advances through the K dimension before moving to the next N tile.
+  */
 class Sequencer(c: SAConfig) extends Module {
   val io = IO(new Bundle {
     // Command Decoder <-> Sequencer interface
@@ -19,11 +27,11 @@ class Sequencer(c: SAConfig) extends Module {
     val accCtrl = Decoupled(new AccCtrl(c))
   })
 
-  
-
+  // The sequencer accepts instructions only while it is idle.
   val sIdle :: sIssue :: sWait :: Nil = Enum(3)
   val state = RegInit(sIdle)
 
+  // Latched matrix addresses, dimensions, strides, and post-processing options.
   val aAddr = RegInit(0.U(c.addrW.W))
   val bAddr = RegInit(0.U(c.addrW.W))
   val cAddr = RegInit(0.U(c.outAddrW.W))
@@ -37,24 +45,30 @@ class Sequencer(c: SAConfig) extends Module {
   val relu = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
 
+  // Offsets identify the current tile within the K and N dimensions.
   val nOff = RegInit(0.U(c.dimW.W))
   val kOff = RegInit(0.U(c.dimW.W))
 
+  // Track whether the current tile's two commands have been accepted.
   val accSent = RegInit(false.B)
   val cmdSent = RegInit(false.B)
 
+  // Cycle counters reported through the status interface.
   val busyPeCycles = RegInit(0.U(SeqStatus.counterW.W))
   val cycles = RegInit(0.U(SeqStatus.counterW.W))
 
+  // Tile boundary flags used to control accumulation and address updates.
   val firstK = kOff === 0.U
   val lastK = (kOff + c.rows.U) === k
   val lastN = (nOff + c.cols.U) === n
 
+  // An instruction is accepted only in the idle state.
   io.instr.ready := state === sIdle
   io.status.busy := state =/= sIdle
   io.status.cycles := cycles
   io.status.busyPeCycles := busyPeCycles
 
+  // The accumulator and data mover receive one command per tile.
   io.accCtrl.valid := (state === sIssue) && !accSent
   io.accCtrl.bits.first := firstK
   io.accCtrl.bits.last  := lastK
@@ -66,6 +80,7 @@ class Sequencer(c: SAConfig) extends Module {
   io.accCtrl.bits.shift := shift
 
   io.tileCmd.valid := (state === sIssue) && !cmdSent
+  // Advance the input addresses by the current K and N tile offsets.
   io.tileCmd.bits.aAddr := aAddr + kOff
   io.tileCmd.bits.bAddr := bAddr + kOff * ldB + nOff
   io.tileCmd.bits.ldA := ldA
@@ -76,6 +91,7 @@ class Sequencer(c: SAConfig) extends Module {
 
   switch(state) {
     is(sIdle) {
+      // Latch a new matrix-multiplication instruction and start with its first tile.
       when(io.instr.fire) {
         assert(io.instr.bits.op === Opcode.Matmul)
         aAddr := io.instr.bits.aAddr
@@ -108,6 +124,7 @@ class Sequencer(c: SAConfig) extends Module {
     }
 
     is(sIssue) {
+      // Wait until both downstream modules have accepted their tile commands.
       when(io.accCtrl.fire) { 
         accSent := true.B 
       }
@@ -120,22 +137,26 @@ class Sequencer(c: SAConfig) extends Module {
     }
 
     is(sWait) {
+      // Wait for the accumulator before issuing the next tile.
       when(io.tileDone.valid) {
         busyPeCycles := busyPeCycles + (m << log2Ceil(c.rows * c.cols))
 
         accSent := false.B
         cmdSent := false.B
 
+        // Complete the next K tile for the current output tile first.
         when(!lastK)      { 
           kOff := kOff + c.rows.U; state := sIssue 
         }
         .elsewhen(!lastN) {
+          // Once K is complete, reset K and advance to the next N tile.
           kOff := 0.U
           nOff := nOff + c.cols.U
           
           state := sIssue 
         }
         .otherwise { 
+          // The complete matrix multiplication has finished.
           state := sIdle }
       }
     }

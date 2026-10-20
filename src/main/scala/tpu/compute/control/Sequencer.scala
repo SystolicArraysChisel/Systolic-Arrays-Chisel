@@ -72,7 +72,7 @@ class Sequencer(c: SAConfig) extends Module {
   // The accumulator and data mover receive one command per tile.
   io.accCtrl.valid := (state === sIssue) && !accSent
   io.accCtrl.bits.first := firstK
-  io.accCtrl.bits.last  := lastK
+  io.accCtrl.bits.last := lastK
   io.accCtrl.bits.cAddr := cAddr + nOff
   io.accCtrl.bits.ldC := ldC
   io.accCtrl.bits.m := m

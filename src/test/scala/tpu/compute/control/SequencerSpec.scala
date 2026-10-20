@@ -47,15 +47,19 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
       shift: Int = 0
   ): Unit = {
     dut.io.instr.bits.op.poke(Opcode.Matmul)
+
     dut.io.instr.bits.aAddr.poke(aAddr.U)
     dut.io.instr.bits.bAddr.poke(bAddr.U)
     dut.io.instr.bits.cAddr.poke(cAddr.U)
+
     dut.io.instr.bits.m.poke(m.U)
     dut.io.instr.bits.k.poke(k.U)
     dut.io.instr.bits.n.poke(n.U)
+
     dut.io.instr.bits.ldA.poke(ldA.U)
     dut.io.instr.bits.ldB.poke(ldB.U)
     dut.io.instr.bits.ldC.poke(ldC.U)
+
     dut.io.instr.bits.requant.poke(requant.B)
     dut.io.instr.bits.relu.poke(relu.B)
     dut.io.instr.bits.shift.poke(shift.U)
@@ -64,6 +68,7 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
   private def acceptInstruction(dut: Sequencer): Unit = {
     dut.io.instr.valid.poke(true.B)
     dut.io.instr.ready.expect(true.B)
+
     dut.clock.step()
     dut.io.instr.valid.poke(false.B)
     dut.io.status.busy.expect(true.B)
@@ -73,11 +78,16 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut: Sequencer,
       aAddr: Int,
       bAddr: Int,
+      ldA: Int,
+      ldB: Int,
       m: Int,
       cAddr: Int,
       ldC: Int,
       first: Boolean,
       last: Boolean,
+      requant: Boolean = false,
+      relu: Boolean = false,
+      shift: Int = 0,
       acceptAccumulator: Boolean = true,
       acceptMover: Boolean = true
   ): Unit = {
@@ -89,9 +99,14 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.accCtrl.bits.cAddr.expect(cAddr.U)
     dut.io.accCtrl.bits.ldC.expect(ldC.U)
     dut.io.accCtrl.bits.m.expect(m.U)
+    dut.io.accCtrl.bits.requant.expect(requant.B)
+    dut.io.accCtrl.bits.relu.expect(relu.B)
+    dut.io.accCtrl.bits.shift.expect(shift.U)
 
     dut.io.tileCmd.bits.aAddr.expect(aAddr.U)
     dut.io.tileCmd.bits.bAddr.expect(bAddr.U)
+    dut.io.tileCmd.bits.ldA.expect(ldA.U)
+    dut.io.tileCmd.bits.ldB.expect(ldB.U)
     dut.io.tileCmd.bits.m.expect(m.U)
 
     dut.io.accCtrl.ready.poke(acceptAccumulator.B)
@@ -140,6 +155,8 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
         dut,
         aAddr = 4,
         bAddr = 8,
+        ldA = 2,
+        ldB = 2,
         m = 2,
         cAddr = 12,
         ldC = 2,
@@ -151,11 +168,15 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.tileCmd.valid.expect(true.B)
       dut.io.tileCmd.bits.aAddr.expect(4.U)
       dut.io.tileCmd.bits.bAddr.expect(8.U)
+      dut.io.tileCmd.bits.ldA.expect(2.U)
+      dut.io.tileCmd.bits.ldB.expect(2.U)
+      dut.io.tileCmd.bits.m.expect(2.U)
 
       // The data-mover command is accepted later, without being lost.
       dut.io.tileCmd.ready.poke(true.B)
       dut.clock.step()
       dut.io.tileCmd.ready.poke(false.B)
+      
       dut.io.accCtrl.valid.expect(false.B)
       dut.io.tileCmd.valid.expect(false.B)
 
@@ -189,11 +210,16 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
         dut,
         aAddr = 16,
         bAddr = 32,
+        ldA = 4,
+        ldB = 6,
         m = 3,
         cAddr = 8,
         ldC = 8,
         first = true,
-        last = false
+        last = false,
+        requant = true,
+        relu = true,
+        shift = 3
       )
       completeTile(dut)
       dut.io.status.busyPeCycles.expect(12.U)
@@ -203,11 +229,16 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
         dut,
         aAddr = 18,
         bAddr = 44,
+        ldA = 4,
+        ldB = 6,
         m = 3,
         cAddr = 8,
         ldC = 8,
         first = false,
-        last = true
+        last = true,
+        requant = true,
+        relu = true,
+        shift = 3
       )
       completeTile(dut)
       dut.io.status.busyPeCycles.expect(24.U)
@@ -217,11 +248,16 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
         dut,
         aAddr = 16,
         bAddr = 34,
+        ldA = 4,
+        ldB = 6,
         m = 3,
         cAddr = 10,
         ldC = 8,
         first = true,
-        last = false
+        last = false,
+        requant = true,
+        relu = true,
+        shift = 3
       )
       completeTile(dut)
       dut.io.status.busyPeCycles.expect(36.U)
@@ -231,11 +267,16 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
         dut,
         aAddr = 18,
         bAddr = 46,
+        ldA = 4,
+        ldB = 6,
         m = 3,
         cAddr = 10,
         ldC = 8,
         first = false,
-        last = true
+        last = true,
+        requant = true,
+        relu = true,
+        shift = 3
       )
       completeTile(dut)
 

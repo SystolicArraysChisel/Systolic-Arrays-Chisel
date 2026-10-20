@@ -7,7 +7,7 @@ import chisel3._
   */
 
 object Opcode extends ChiselEnum {
-  val Matmul = Value
+  val Idle, Matmul = Value
 }
 
 /** One element written by the decoder into the INPUT memory (when executing the

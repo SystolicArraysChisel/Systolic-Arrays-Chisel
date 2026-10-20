@@ -88,7 +88,9 @@ class Sequencer(c: SAConfig) extends Module {
   io.tileCmd.bits.ldB := ldB
   io.tileCmd.bits.m := m
 
-
+  when(state =/= sIdle) {
+    cycles := cycles + 1.U
+  }
 
   switch(state) {
     is(sIdle) {

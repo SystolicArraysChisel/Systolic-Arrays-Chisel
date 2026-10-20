@@ -182,6 +182,7 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
 
       completeTile(dut)
       dut.io.status.busy.expect(false.B)
+      dut.io.status.cycles.expect(3.U)
     }
   }
 
@@ -282,6 +283,7 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.status.busy.expect(false.B)
       dut.io.instr.ready.expect(true.B)
+      dut.io.status.cycles.expect(8.U)
       dut.io.status.busyPeCycles.expect(48.U)
     }
   }

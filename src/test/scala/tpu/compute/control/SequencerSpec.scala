@@ -176,7 +176,7 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.tileCmd.ready.poke(true.B)
       dut.clock.step()
       dut.io.tileCmd.ready.poke(false.B)
-      
+
       dut.io.accCtrl.valid.expect(false.B)
       dut.io.tileCmd.valid.expect(false.B)
 
@@ -288,3 +288,9 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 }
+
+/**
+  * TODO: Add tests for the following scenarios:
+  * - tileCmd and accCtrl are accepted in the same cycle
+  * - tileCmd is accepted before accCtrl
+  */

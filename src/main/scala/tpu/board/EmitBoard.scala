@@ -15,14 +15,14 @@ import tpu.io.BoardConfig
   *       vivado -mode batch -source fpga/program.tcl   (load it on the board)
   */
 object EmitBoard extends App {
-  val b = BoardConfig.nexys
+  val b = BoardConfig.nexysTpu
 
-  emit(() => new Tpu(SAConfig(), b), "generated")
+  emit(() => new Tpu(SAConfig(), b), "generated", b.clockHz)
 
   /** chisel3.stage.ChiselStage is deprecated in Chisel 3.6, but unlike
     * circt.stage.ChiselStage it does not need the firtool binary.
     */
   @annotation.nowarn("cat=deprecation")
-  def emit(core: () => CoreModule, targetDir: String): String =
-    (new ChiselStage).emitVerilog(new BoardTop(core()), Array("--target-dir", targetDir))
+  def emit(core: () => CoreModule, targetDir: String, coreHz: Int = 100_000_000): String =
+    (new ChiselStage).emitVerilog(new BoardTop(core(), coreHz), Array("--target-dir", targetDir))
 }

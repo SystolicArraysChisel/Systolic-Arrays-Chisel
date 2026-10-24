@@ -60,7 +60,8 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
 
   private def sendRows(
       dut: Accumulators,
-      rows: Seq[Seq[Int]]
+      rows: Seq[Seq[Int]],
+      last: Boolean
   ): Unit = {
     rows.zipWithIndex.foreach { case (row, rowIndex) =>
       row.zipWithIndex.foreach { case (value, col) =>
@@ -68,8 +69,9 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       }
       dut.io.in.valid.poke(true.B)
 
-      // When the last row is sent, the DUT should assert done.valid.
-      dut.io.done.valid.expect(rowIndex == rows.size - 1)
+      // done.valid comes with the last row, unless the tile is the last
+      // one: then it comes with the last write.
+      dut.io.done.valid.expect((!last && rowIndex == rows.size - 1).B)
 
       dut.clock.step()
       dut.io.in.valid.poke(false.B)
@@ -82,6 +84,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
   ): Unit = {
     expected.foreach { case (rowAddr, values) =>
       dut.io.resWr.valid.expect(true.B)
+      dut.io.done.valid.expect(((rowAddr, values) == expected.last).B)
 
       dut.io.resWr.bits.rowAddr.expect(rowAddr.U)
       values.zipWithIndex.foreach { case (value, col) =>
@@ -102,7 +105,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       sendControl(
         dut, first = true, last = true, 
         cAddr = 4, ldC = 4, m = 2)
-      sendRows(dut, Seq(Seq(1, -2), Seq(3, 4)))
+      sendRows(dut, Seq(Seq(1, -2), Seq(3, 4)), last = true)
       readWrites(dut, Seq(2 -> Seq(1, -2), 4 -> Seq(3, 4)))
     }
   }
@@ -116,12 +119,12 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       sendControl(
         dut, first = true, last = false, 
         cAddr = 0, ldC = 4, m = 2)
-      sendRows(dut, Seq(Seq(1, 2), Seq(3, 4)))
+      sendRows(dut, Seq(Seq(1, 2), Seq(3, 4)), last = false)
 
       sendControl(
         dut, first = false, last = true, 
         cAddr = 0, ldC = 4, m = 2)
-      sendRows(dut, Seq(Seq(10, 20), Seq(-3, 6)))
+      sendRows(dut, Seq(Seq(10, 20), Seq(-3, 6)), last = true)
 
       // The expected result is the sum of the two tiles.
       readWrites(dut, Seq(0 -> Seq(11, 22), 2 -> Seq(0, 10)))
@@ -140,7 +143,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
         cAddr = 0, ldC = 2, m = 1,
         requant = true, shift = 1
       )
-      sendRows(dut, Seq(Seq(1000, -1000)))
+      sendRows(dut, Seq(Seq(1000, -1000)), last = true)
 
       // The expected result is the requantized values,
       // which are saturated to the int8 symmetric range.

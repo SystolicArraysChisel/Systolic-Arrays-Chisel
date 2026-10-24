@@ -47,14 +47,19 @@ write_bitstream -force $out/BoardTop.bit
 set wns [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup]]
 set whs [get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -hold]]
 
-proc used {type} {
-  set cells [get_cells -hierarchical -quiet -filter "PRIMITIVE_TYPE =~ $type"]
-  return [llength $cells]
+# "Used" column of a row of the utilization report
+proc used {text row} {
+  set n "?"
+  regexp [format {\|\s*%s\s*\|\s*([0-9.]+)} $row] $text -> n
+  return $n
 }
-set luts  [used CLB.LUT.*]
-set ffs   [used REGISTER.SDR.*]
-set ramb  [expr {[used BLOCKRAM.BRAM.RAMB36E1] + 0.5 * [used BLOCKRAM.BRAM.RAMB18E1]}]
-set dsps  [used ARITHMETIC.DSP.*]
+set fh [open $rpt/utilization.rpt]
+set util [read $fh]
+close $fh
+set luts [used $util {Slice LUTs}]
+set ffs  [used $util {Slice Registers}]
+set ramb [used $util {Block RAM Tile}]
+set dsps [used $util {DSPs}]
 set power "?"
 set fh [open $rpt/power.rpt]
 regexp {Total On-Chip Power \(W\)\s*\|\s*([0-9.]+)} [read $fh] -> power

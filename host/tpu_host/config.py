@@ -17,6 +17,7 @@ class HwConfig:
     max_m: int = 64  # largest m one MATMUL accepts
     acc_width: int = 32  # bits of an accumulator
     baud: int = 115_200  # UART speed
+    clock_hz: int = 50_000_000  # core clock (BoardConfig.nexysTpu), to turn cycles into time
     rx_fifo_depth: int = 16  # bytes RxFifo holds while the decoder is busy
 
     @property

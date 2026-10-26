@@ -27,6 +27,26 @@ print(res.c, res.perf.cycles, res.perf.utilization(tpu.cfg))
 
 `HwConfig` must match the `SAConfig` / `BoardConfig` of the bitstream.
 
+## On the board
+
+From the repository root:
+
+```
+sbt "runMain tpu.board.EmitBoard"                # generated/BoardTop.v
+vivado -mode batch -source fpga/build.tcl        # build/BoardTop.bit, build/reports/, build/summary.txt
+vivado -mode batch -source fpga/program.tcl
+```
+
+Then, from `host/`:
+
+```
+.venv\Scripts\python run_board.py smoke COM5              # Tpu: results equal NumPy
+.venv\Scripts\python run_board.py sweep COM5 -o perf.csv  # Tpu: cycles and utilization per size
+```
+
+Both also run with `--fake` (FakeTpu, no board). The COM port is the
+"USB Serial Port" the Nexys4 DDR creates (Device Manager, FTDI).
+
 ## Modules
 
 | File | Content |

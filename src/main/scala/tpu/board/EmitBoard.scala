@@ -11,7 +11,8 @@ import tpu.io.BoardConfig
   *
   * sbt "runMain tpu.board.EmitBoard"
   *
-  * Add the generated BoardTop.v and fpga/nexys4ddr.xdc to the Vivado project.
+  * Then: vivado -mode batch -source fpga/build.tcl     (bitstream and reports in build/)
+  *       vivado -mode batch -source fpga/program.tcl   (load it on the board)
   */
 object EmitBoard extends App {
   val b = BoardConfig.nexys

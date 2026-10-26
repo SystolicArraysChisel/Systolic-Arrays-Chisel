@@ -11,6 +11,7 @@ Exit code 0 when every check passes, 1 otherwise.
 
 import argparse
 import csv
+import os
 import sys
 import time
 
@@ -20,6 +21,20 @@ from tpu_host import (HwConfig, Tpu, TpuError, choose_scale, choose_shift, dequa
                       matmul_ref, quantize, requant_scale)
 from tpu_host import protocol as p
 from tpu_host.sim import FakeTpu
+
+
+BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build")
+
+
+def load_config(args) -> HwConfig:
+    """--config: a configuration name (build/<name>/config.json) or a path to a
+    config.json; without it, the defaults of HwConfig (the 4x4 array)."""
+    if not args.config:
+        return HwConfig()
+    path = args.config if args.config.endswith(".json") else os.path.join(BUILD, args.config, "config.json")
+    if not os.path.exists(path):
+        raise SystemExit(f"{path} not found: build that configuration first (fpga/build.tcl)")
+    return HwConfig.load(path)
 
 
 def open_tpu(args, cfg: HwConfig) -> Tpu:
@@ -51,7 +66,7 @@ def smoke_cases(rng, cfg: HwConfig):
 
 
 def cmd_smoke(args) -> bool:
-    cfg = HwConfig()
+    cfg = load_config(args)
     rng = np.random.default_rng(args.seed)
     tpu = open_tpu(args, cfg)
     ok = True
@@ -95,7 +110,7 @@ def cmd_smoke(args) -> bool:
 
 def cmd_sweep(args) -> bool:
     """Square products of growing size: cycles on the FPGA vs the ideal m*k*n / (R*C)."""
-    cfg = HwConfig()
+    cfg = load_config(args)
     rng = np.random.default_rng(args.seed)
     tpu = open_tpu(args, cfg)
     rows = []
@@ -113,7 +128,8 @@ def cmd_sweep(args) -> bool:
                 "m": size, "k": size, "n": size,
                 "cycles": perf.cycles, "busy_pe_cycles": perf.busy_pe_cycles,
                 "ideal_cycles": ideal, "utilization": perf.utilization(cfg),
-                "wall_s": round(wall, 3), "correct": correct,
+                "compute_s": perf.cycles / cfg.clock_hz, "wall_s": round(wall, 3),
+                "config": cfg.name, "correct": correct,
             })
             print(f"{size:4d}  {perf.cycles:8d} cycles  ideal {ideal:8.0f}  "
                   f"utilization {perf.utilization(cfg):6.1%}  wall {wall:6.2f} s  "
@@ -195,7 +211,7 @@ def cmd_run(args) -> bool:
     """One product, with every intermediate value, as JSON (for the GUI)."""
     import json
 
-    cfg = HwConfig()
+    cfg = load_config(args)
     rng = np.random.default_rng(args.seed)
     a, b, is_float = run_inputs(args, rng)
     if a.ndim != 2 or b.ndim != 2 or a.shape[1] != b.shape[0]:
@@ -317,6 +333,8 @@ def main(argv=None) -> int:
         p.add_argument("--fake", action="store_true", help="use FakeTpu instead of the board")
         p.add_argument("--timeout", type=float, default=5.0, help="seconds to wait for a reply")
         p.add_argument("--seed", type=int, default=0)
+        p.add_argument("--config", help="hardware configuration of the bitstream: a name (build/<name>/) "
+                                        "or a config.json path; default 4x4")
 
     p = sub.add_parser("smoke", help="check Tpu results against NumPy")
     common(p)

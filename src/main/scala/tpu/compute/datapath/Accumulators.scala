@@ -101,7 +101,9 @@ class Accumulators(c: SAConfig) extends Module {
         }
 
         when(rowCounter === m - 1.U) {
-          io.done.valid := true.B
+          // The final tile reports done only once its rows are written, so
+          // the next tile cannot reach the array while sWrite is running.
+          io.done.valid := !last
           when(last) {
             // The final tile is followed by a write phase.
             writeCounter := 0.U
@@ -166,6 +168,7 @@ class Accumulators(c: SAConfig) extends Module {
         rowAddr := rowAddr + (ldC >> log2Ceil(c.cols))
 
         when(writeCounter === m - 1.U) {
+          io.done.valid := true.B
           state := sCtrl
         } .otherwise {
           writeCounter := writeCounter + 1.U

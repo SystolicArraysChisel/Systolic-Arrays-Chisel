@@ -1,26 +1,31 @@
-# Builds the Nexys4 DDR bitstream from the Verilog written by EmitBoard
-# (non-project flow) and writes the timing, utilization and power reports.
+# Builds the Nexys4 DDR bitstream of one array configuration from the Verilog
+# written by EmitBoard (non-project flow) and writes the timing, utilization
+# and power reports.
 #
-#   sbt "runMain tpu.board.EmitBoard"
-#   vivado -mode batch -source fpga/build.tcl      (from the repository root)
+#   sbt "runMain tpu.board.EmitBoard 8x8"
+#   vivado -mode batch -source fpga/build.tcl -tclargs 8x8   (from the repository root)
 #
-# Optional: -tclargs <verilog> <out dir>  (default generated/BoardTop.v build/).
-# Output: <out dir>/BoardTop.bit, <out dir>/reports/*.rpt and
-# <out dir>/summary.txt (WNS, LUT, FF, BRAM, DSP, power). The bitstream is written
-# even when timing fails, but the script then exits with an error.
+# The argument is the configuration name (default 4x4): the input is
+# generated/<config>/, the output build/<config>/: BoardTop.bit, config.json
+# (the parameters the host needs), reports/*.rpt and summary.txt (WNS, LUT,
+# FF, BRAM, DSP, power). The bitstream is written even when timing fails, but
+# the script then exits with an error.
 
 set part xc7a100tcsg324-1
 set root [file normalize [file dirname [info script]]/..]
 
-set verilog [expr {$argc >= 1 ? [lindex $argv 0] : "$root/generated/BoardTop.v"}]
-set out     [expr {$argc >= 2 ? [lindex $argv 1] : "$root/build"}]
+set name    [expr {$argc >= 1 ? [lindex $argv 0] : "4x4"}]
+set gen     "$root/generated/$name"
+set verilog "$gen/BoardTop.v"
+set out     "$root/build/$name"
 set xdc     "$root/fpga/nexys4ddr.xdc"
 set rpt     "$out/reports"
 
 if {![file exists $verilog]} {
-  error "$verilog not found: run sbt \"runMain tpu.board.EmitBoard tpu\" first"
+  error "$verilog not found: run sbt \"runMain tpu.board.EmitBoard $name\" first"
 }
 file mkdir $rpt
+file copy -force "$gen/config.json" "$out/config.json"
 
 # ---- synthesis ----
 read_verilog $verilog

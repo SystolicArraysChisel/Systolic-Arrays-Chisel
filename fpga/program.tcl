@@ -1,15 +1,17 @@
 # Loads a bitstream into the FPGA of the Nexys4 DDR over USB-JTAG (lost at
 # power off; the board must be on and plugged into the PROG/UART port).
 #
-#   vivado -mode batch -source fpga/program.tcl    (from the repository root)
+#   vivado -mode batch -source fpga/program.tcl -tclargs 8x8   (from the repository root)
 #
-# Optional: -tclargs <bitstream>  (default build/BoardTop.bit).
+# The argument is the configuration name (default 4x4): loads
+# build/<config>/BoardTop.bit.
 
 set root [file normalize [file dirname [info script]]/..]
-set bit  [expr {$argc >= 1 ? [lindex $argv 0] : "$root/build/BoardTop.bit"}]
+set name [expr {$argc >= 1 ? [lindex $argv 0] : "4x4"}]
+set bit  "$root/build/$name/BoardTop.bit"
 
 if {![file exists $bit]} {
-  error "$bit not found: run fpga/build.tcl first"
+  error "$bit not found: run fpga/build.tcl -tclargs $name first"
 }
 
 open_hw_manager

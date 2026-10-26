@@ -1,10 +1,11 @@
 package tpu.ref
 
-/** Quantization, as the host does it.
+/** Quantization, the Scala copy of host/tpu_host/quant.py.
   *
   * Symmetric scheme, one scale per matrix: x ~= scale * q, q in [-127, 127].
   * Every rounding is round-half-up (ties toward +infinity: 2.5 -> 3,
-  * -2.5 -> -2), as in the hardware requantization.
+  * -2.5 -> -2), as in the hardware requantization. ref_vectors.txt checks
+  * that this file and the Python one agree bit for bit.
   */
 object Quant {
   val QMax = 127

@@ -2,6 +2,8 @@ package tpu.compute.array
 
 import chisel3._
 import chisel3.util._
+import chisel3.experimental.{annotate, ChiselAnnotation}
+import firrtl.AttributeAnnotation
 
 import ifaces._
 
@@ -35,5 +37,11 @@ class ProcessingElement(c: SAConfig) extends Module {
   io.aOut := RegNext(io.aIn)
 
   // + keeps accWidth bits, so an overflow wraps like int32 arithmetic.
-  io.psumOut := RegNext(io.psumIn + io.aIn * w)
+  val psum = RegNext(io.psumIn + io.aIn * w)
+  io.psumOut := psum
+
+  // Vivado builds the 8x8 products from LUTs on its own: force a DSP slice.
+  annotate(new ChiselAnnotation {
+    def toFirrtl = AttributeAnnotation(psum.toTarget, "use_dsp = \"yes\"")
+  })
 }

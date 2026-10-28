@@ -8,9 +8,9 @@ import ifaces.SAConfig
 import chisel3._
 import tpu.io.{BoardConfig, CommandDecoder, DecoderBench, DecoderWithSequencer}
 
-/** Checks the Scala model and the CommandDecoder against the vectors written
-  * by the Python host (host/tpu_host/vectors.py), so both sides agree bit for
-  * bit. Line format is documented there.
+/** Checks the Scala model and the CommandDecoder against the vectors generated
+  * by the former Python host, also checked by the C++ host, so all sides agree
+  * bit for bit. Line format: host/README.md.
   */
 class RefVectorsSpec extends AnyFlatSpec with ChiselScalatestTester {
 

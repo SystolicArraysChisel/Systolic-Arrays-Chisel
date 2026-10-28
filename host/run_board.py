@@ -200,7 +200,10 @@ def run_inputs(args, rng):
         is_float = args.float or not (np.issubdtype(a.dtype, np.integer) and np.issubdtype(b.dtype, np.integer))
         return a, b, is_float
     if args.float:
-        return rng.standard_normal((args.m, args.k)), rng.standard_normal((args.k, args.n)), True
+        a, b = rng.standard_normal((args.m, args.k)), rng.standard_normal((args.k, args.n))
+        if args.decimals is not None:  # short numbers, easy to multiply by hand
+            a, b = np.round(a, args.decimals), np.round(b, args.decimals)
+        return a, b, True
     return rand_int8(rng, (args.m, args.k)), rand_int8(rng, (args.k, args.n)), False
 
 
@@ -223,7 +226,7 @@ def cmd_run(args) -> bool:
     m, k = a.shape
     n = b.shape[1]
     out = {"command": sys.argv, "hw": cfg.__dict__, "m": m, "k": k, "n": n,
-           "float": is_float, "requant": args.requant, "relu": args.relu}
+           "float": is_float, "requant": args.requant, "relu": args.relu, "decimals": args.decimals}
 
     # host side: quantize (float inputs only) and choose the shift
     if is_float:
@@ -359,6 +362,7 @@ def main(argv=None) -> int:
     sp.add_argument("--k", type=int, default=8, help="columns of A = rows of B")
     sp.add_argument("--n", type=int, default=8, help="columns of B")
     sp.add_argument("--float", action="store_true", help="real inputs: quantize on the host")
+    sp.add_argument("--decimals", type=int, help="with --float: round the random inputs to this many decimals")
     sp.add_argument("--example", action="store_true", help="the worked example of the workload document")
     sp.add_argument("--a", help="A from a .npy or .csv file (with --b)")
     sp.add_argument("--b", help="B from a .npy or .csv file (with --a)")

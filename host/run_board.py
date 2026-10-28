@@ -109,7 +109,10 @@ def cmd_smoke(args) -> bool:
 # ---- sweep ----
 
 def cmd_sweep(args) -> bool:
-    """Square products of growing size: cycles on the FPGA vs the ideal m*k*n / (R*C)."""
+    """Products of growing size: cycles on the FPGA vs the ideal m*k*n / (R*C).
+
+    --vary square: m = k = n = each size. --vary m: m = each size, k = n = --kn
+    (a taller A reuses the same weights for more rows)."""
     cfg = load_config(args)
     rng = np.random.default_rng(args.seed)
     tpu = open_tpu(args, cfg)
@@ -117,21 +120,22 @@ def cmd_sweep(args) -> bool:
     ok = True
     try:
         for size in args.sizes:
-            a, b = rand_int8(rng, (size, size)), rand_int8(rng, (size, size))
+            m, k, n = (size, size, size) if args.vary == "square" else (size, args.kn, args.kn)
+            a, b = rand_int8(rng, (m, k)), rand_int8(rng, (k, n))
             t0 = time.monotonic()
             c, perf = tpu.matmul(a, b)
             wall = time.monotonic() - t0
             correct = np.array_equal(c, matmul_ref(a, b))
             ok &= correct
-            ideal = size ** 3 / (cfg.rows * cfg.cols)
+            ideal = m * k * n / (cfg.rows * cfg.cols)
             rows.append({
-                "m": size, "k": size, "n": size,
+                "vary": args.vary, "m": m, "k": k, "n": n,
                 "cycles": perf.cycles, "busy_pe_cycles": perf.busy_pe_cycles,
                 "ideal_cycles": ideal, "utilization": perf.utilization(cfg),
                 "compute_s": perf.cycles / cfg.clock_hz, "wall_s": round(wall, 3),
                 "config": cfg.name, "correct": correct,
             })
-            print(f"{size:4d}  {perf.cycles:8d} cycles  ideal {ideal:8.0f}  "
+            print(f"{m:4d}x{k}x{n}  {perf.cycles:8d} cycles  ideal {ideal:8.0f}  "
                   f"utilization {perf.utilization(cfg):6.1%}  wall {wall:6.2f} s  "
                   f"{'ok' if correct else 'WRONG'}")
     finally:
@@ -340,8 +344,11 @@ def main(argv=None) -> int:
     common(p)
     p.set_defaults(fn=cmd_smoke)
 
-    p = sub.add_parser("sweep", help="cycles and utilization for square products")
+    p = sub.add_parser("sweep", help="cycles and utilization for products of growing size")
     common(p)
+    p.add_argument("--vary", choices=["square", "m"], default="square",
+                   help="square: m = k = n = size; m: m = size with k = n = --kn")
+    p.add_argument("--kn", type=int, default=16, help="k and n with --vary m")
     p.add_argument("--sizes", type=int, nargs="+", default=[4, 8, 12, 16, 24, 32, 40])
     p.add_argument("-o", "--output", help="CSV file for the results")
     p.set_defaults(fn=cmd_sweep)

@@ -1,0 +1,12 @@
+{
+  "name": "8x8",
+  "rows": 8,
+  "cols": 8,
+  "in_depth": 4096,
+  "out_depth": 4096,
+  "max_m": 64,
+  "acc_width": 32,
+  "baud": 115200,
+  "rx_fifo_depth": 16,
+  "clock_hz": 50000000
+}

@@ -82,6 +82,9 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut: Accumulators,
       expected: Seq[(Int, Seq[Int])]
   ): Unit = {
+    while (!dut.io.resWr.valid.peekBoolean()) {
+      dut.clock.step()
+    }
     expected.foreach { case (rowAddr, values) =>
       dut.io.resWr.valid.expect(true.B)
       dut.io.done.valid.expect(((rowAddr, values) == expected.last).B)
@@ -139,7 +142,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       // and (cAddr + ldC) / cols = (0 + 2) / 2 = 1. 
       // The tile is requantized with a shift of 1.
       sendControl(
-        dut, first = true, last = true,
+        dut, first = true, last = true, 
         cAddr = 0, ldC = 2, m = 1,
         requant = true, shift = 1
       )
@@ -151,7 +154,3 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 }
-
-/**
-  * TODO: More tests.
-  */

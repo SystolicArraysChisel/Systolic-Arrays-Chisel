@@ -57,8 +57,8 @@ object BoardConfig {
   val nexys: BoardConfig =
     BoardConfig() // The real board: 100 MHz, 115 200 baud.
 
-  /** The Tpu on the real board: its core does not meet timing at 100 MHz yet,
-    * so BoardTop runs it at 50 MHz from an MMCM. Same baud rate.
+  /** The Tpu on the real board: runs at 100 MHz directly from the 100 MHz board clock.
+    * Timing closure is fully achieved (WNS > 0) thanks to BRAM inference and pipelining.
     */
-  val nexysTpu: BoardConfig = BoardConfig(clockHz = 50_000_000)
+  val nexysTpu: BoardConfig = BoardConfig(clockHz = 100_000_000)
 }

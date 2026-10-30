@@ -50,6 +50,14 @@ class Sequencer(c: SAConfig) extends Module {
   val nOff = RegInit(0.U(c.dimW.W))
   val kOff = RegInit(0.U(c.dimW.W))
 
+  // Running addresses for matrix B tiles. 
+  // bColBase tracks the starting address
+  // of the current N-column block; bTileAddr 
+  // steps through K tiles by row increments.
+  val bColBase = RegInit(0.U(c.addrW.W))
+  val bTileAddr = RegInit(0.U(c.addrW.W))
+  val bRowStep = (ldB << log2Ceil(c.rows))(c.addrW - 1, 0)
+
   // Track whether the current tile's two commands have been accepted.
   val accSent = RegInit(false.B)
   val cmdSent = RegInit(false.B)
@@ -83,7 +91,7 @@ class Sequencer(c: SAConfig) extends Module {
   io.tileCmd.valid := (state === sIssue) && !cmdSent
   // Advance the input addresses by the current K and N tile offsets.
   io.tileCmd.bits.aAddr := aAddr + kOff
-  io.tileCmd.bits.bAddr := bAddr + kOff * ldB + nOff
+  io.tileCmd.bits.bAddr := bTileAddr
   io.tileCmd.bits.ldA := ldA
   io.tileCmd.bits.ldB := ldB
   io.tileCmd.bits.m := m
@@ -113,6 +121,8 @@ class Sequencer(c: SAConfig) extends Module {
 
         kOff := 0.U
         nOff := 0.U
+        bColBase := io.instr.bits.bAddr
+        bTileAddr := io.instr.bits.bAddr
 
         accSent := false.B
         cmdSent := false.B
@@ -149,14 +159,16 @@ class Sequencer(c: SAConfig) extends Module {
         // Complete the next K tile for the current output tile first.
         when(!lastK) { 
           kOff := kOff + c.rows.U
-          
+          bTileAddr := bTileAddr + bRowStep
           state := sIssue 
         }
         .elsewhen(!lastN) {
           // Once K is complete, reset K and advance to the next N tile.
           kOff := 0.U
           nOff := nOff + c.cols.U
-          
+          val nextColBase = (bColBase + c.cols.U)(c.addrW - 1, 0)
+          bColBase := nextColBase
+          bTileAddr := nextColBase
           state := sIssue 
         }
         .otherwise { 

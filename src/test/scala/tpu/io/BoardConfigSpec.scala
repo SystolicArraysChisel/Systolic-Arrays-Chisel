@@ -10,8 +10,8 @@ class BoardConfigTester extends AnyFlatSpec with ChiselScalatestTester {
 
   it should "match the Nexys4 DDR by default" in {
     val b = BoardConfig()
-    assert(b.cyclesPerBit == 868)
-    assert(b.byteCycles == 8680)
+    assert(b.cyclesPerBit == 50)
+    assert(b.byteCycles == 500)
     assert(b.baudError < 0.001)
     assert(b.timeoutW == 21)
   }

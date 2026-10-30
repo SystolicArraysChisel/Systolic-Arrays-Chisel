@@ -3,6 +3,7 @@ package tpu.memory
 import chisel3._
 import chisel3.util._
 
+import chisel3.experimental.{annotate, ChiselAnnotation}
 import ifaces._
 
 /**
@@ -104,7 +105,11 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     * complete row per cycle, while the host reads one element at a time.
     */
   val resultMem = Seq.fill(c.cols) {
-    SyncReadMem(c.outDepth / c.cols, c.accT)
+    val m = SyncReadMem(c.outDepth / c.cols, c.accT)
+    annotate(new ChiselAnnotation {
+      def toFirrtl = firrtl.AttributeAnnotation(m.toTarget, "ram_style = \"block\"")
+    })
+    m
   }
 
   /**
@@ -136,30 +141,33 @@ class UnifiedBuffer(c: SAConfig) extends Module {
   val rdFireD = RegNext(io.hostRdReq.fire, false.B)
   val rdColD = RegEnable(hostRdCol, io.hostRdReq.fire)
   val respValid = RegInit(false.B)
-  val respData = Reg(c.accT)
 
   val hostRdRespVec = Wire(Vec(c.cols, c.accT))
 
   for (col <- 0 until c.cols) {
     hostRdRespVec(col) := resultMem(col).read(
       hostRdRow, 
-      io.hostRdReq.fire && (hostRdCol === col.U))
+      io.hostRdReq.fire)
   }
 
-  // Select the memory output corresponding to the delayed column.
-  val rdRaw = if (c.cols == 1) {
-    hostRdRespVec(0)
-  } else {
-    hostRdRespVec(rdColD)
-  }
+  // Register each column's memory output individually before multiplexing.
+  // This allows Vivado to infer a dedicated Block RAM (RAMB36) with its output
+  // register for each column, avoiding distributed LUTRAM.
+  val respDataVec = Reg(Vec(c.cols, c.accT))
 
-  // Capture the memory output and hold it until the response is accepted.
   when (rdFireD) {
-    respData := rdRaw
+    respDataVec := hostRdRespVec
     respValid := true.B
   }
   when (io.hostRdResp.fire) {
     respValid := false.B
+  }
+
+  // Select the response data from the registered column outputs.
+  val respData = if (c.cols == 1) {
+    respDataVec(0)
+  } else {
+    respDataVec(rdColD)
   }
 
   // Allow at most one outstanding host read.

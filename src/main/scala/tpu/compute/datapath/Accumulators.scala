@@ -3,7 +3,6 @@ package tpu.compute.datapath
 import chisel3._
 import chisel3.util._
 import chisel3.experimental.{annotate, ChiselAnnotation}
-import firrtl.AttributeAnnotation
 
 import ifaces._
 
@@ -48,7 +47,7 @@ class Accumulators(c: SAConfig) extends Module {
   val accMem = Seq.fill(c.cols) {
     val mem = SyncReadMem(c.maxM, c.accT)
     annotate(new ChiselAnnotation {
-      def toFirrtl = AttributeAnnotation(mem.toTarget, "ram_style = \"block\"")
+      def toFirrtl = firrtl.AttributeAnnotation(mem.toTarget, "ram_style = \"block\"")
     })
     mem
   }

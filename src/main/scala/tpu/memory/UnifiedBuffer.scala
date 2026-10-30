@@ -4,7 +4,6 @@ import chisel3._
 import chisel3.util._
 
 import chisel3.experimental.{annotate, ChiselAnnotation}
-import firrtl.AttributeAnnotation
 import ifaces._
 
 /**
@@ -108,7 +107,7 @@ class UnifiedBuffer(c: SAConfig) extends Module {
   val resultMem = Seq.fill(c.cols) {
     val m = SyncReadMem(c.outDepth / c.cols, c.accT)
     annotate(new ChiselAnnotation {
-      def toFirrtl = AttributeAnnotation(m.toTarget, "ram_style = \"block\"")
+      def toFirrtl = firrtl.AttributeAnnotation(m.toTarget, "ram_style = \"block\"")
     })
     m
   }

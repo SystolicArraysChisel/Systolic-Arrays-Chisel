@@ -91,6 +91,7 @@ class Accumulators(c: SAConfig) extends Module {
 
   // R -> Rnd pipeline registers.
   val pipeR_valid = RegInit(false.B)
+  val pipeR_rdAddr = RegInit(0.U(c.dimW.W))
   val pipeR_rowAddr = Reg(UInt(c.outAddrW.W))
   val pipeR_last = RegInit(false.B)
 
@@ -112,10 +113,11 @@ class Accumulators(c: SAConfig) extends Module {
 
   // Unified BRAM Read Port (shared between sAccum and sWrite).
   val accumRdEn = (state === sAccum) && io.in.valid && !first
+  val wrHoldRd = (state === sWrite) && pipeR_valid && !stageRnd_ready
   val wrRdEn = (state === sWrite) && !wrReadsDone && stageRnd_ready
 
-  val rdAddr = Mux(state === sWrite, wrReadCounter, rowCounter)
-  val rdEn = Mux(state === sWrite, wrRdEn, accumRdEn)
+  val rdAddr = Mux(state === sWrite, Mux(wrHoldRd, pipeR_rdAddr, wrReadCounter), rowCounter)
+  val rdEn = Mux(state === sWrite, wrRdEn || wrHoldRd, accumRdEn)
 
   val memRdData = Wire(Vec(c.cols, c.accT))
   for (col <- 0 until c.cols) {
@@ -233,6 +235,7 @@ class Accumulators(c: SAConfig) extends Module {
       when(stageRnd_ready) {
         when(!wrReadsDone) {
           pipeR_valid := true.B
+          pipeR_rdAddr := wrReadCounter
           pipeR_rowAddr := wrRowAddr
           pipeR_last := (wrReadCounter === m - 1.U)
 

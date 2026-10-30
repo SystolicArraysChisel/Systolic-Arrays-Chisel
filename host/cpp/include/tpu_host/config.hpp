@@ -10,7 +10,7 @@ struct HwConfig {
     int out_depth = 4096;       // int32 words in the result memory (C)
     int max_m = 64;             // largest m one MATMUL accepts
     int acc_width = 32;         // bits of an accumulator
-    int baud = 115'200;         // UART speed
+    int baud = 2'000'000;       // UART speed
     int clock_hz = 50'000'000;  // core clock (BoardConfig.nexysTpu), to turn cycles into time
     int rx_fifo_depth = 16;     // bytes RxFifo holds while the decoder is busy
 

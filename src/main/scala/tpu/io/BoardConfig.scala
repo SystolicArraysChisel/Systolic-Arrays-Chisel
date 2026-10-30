@@ -6,7 +6,7 @@ import chisel3.util._
 case class BoardConfig(
     clockHz: Int = 100_000_000, // Clock frequency in Hz
     baud: Int =
-      115_200, // UART speed in bits per second. Must match the Python host.
+      2_000_000, // UART speed in bits per second. Must match the Python host.
     rxFifoDepth: Int =
       16, // Bytes RxFifo can hold while the decoder is busy; when full, the next byte is lost.
     frameTimeout: Int =

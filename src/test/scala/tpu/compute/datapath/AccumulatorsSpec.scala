@@ -244,16 +244,18 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
 
       sendControl(
         dut, first = true, last = true,
-        cAddr = 0, ldC = 2, m = 2
+        cAddr = 0, ldC = 2, m = 4
       )
-      sendRows(dut, Seq(Seq(5, 6), Seq(7, 8)), last = true)
+      sendRows(dut, Seq(Seq(5, 6), Seq(7, 8), Seq(9, 10), Seq(11, 12)), last = true)
 
       // Wait until resWr is valid with row 0.
       while (!dut.io.resWr.valid.peekBoolean()) {
         dut.clock.step()
       }
 
-      // Assert backpressure and verify row 0 is held stable.
+      // Drop ready on the first cycle resWr.valid is high.
+      // With m >= 3, pipeP has row 0, pipeRnd has row 1, pipeR has row 2 (pipeR_valid is true),
+      // and row 2's data is waiting on memRdData.
       dut.io.resWr.ready.poke(false.B)
       for (_ <- 0 until 5) {
         dut.io.resWr.valid.expect(true.B)
@@ -275,12 +277,41 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
         dut.io.resWr.bits.rowAddr.expect(1.U)
         dut.io.resWr.bits.data(0).expect(7.S)
         dut.io.resWr.bits.data(1).expect(8.S)
-        // Stalled: done.valid only pulses on fire.
         dut.io.done.valid.expect(false.B)
         dut.clock.step()
       }
 
       // Accept row 1.
+      dut.io.resWr.ready.poke(true.B)
+      dut.clock.step()
+
+      // Assert backpressure for row 2 (which had to survive the memory stall in Stage R).
+      dut.io.resWr.ready.poke(false.B)
+      for (_ <- 0 until 5) {
+        dut.io.resWr.valid.expect(true.B)
+        dut.io.resWr.bits.rowAddr.expect(2.U)
+        dut.io.resWr.bits.data(0).expect(9.S)
+        dut.io.resWr.bits.data(1).expect(10.S)
+        dut.io.done.valid.expect(false.B)
+        dut.clock.step()
+      }
+
+      // Accept row 2.
+      dut.io.resWr.ready.poke(true.B)
+      dut.clock.step()
+
+      // Assert backpressure for row 3 (final row).
+      dut.io.resWr.ready.poke(false.B)
+      for (_ <- 0 until 5) {
+        dut.io.resWr.valid.expect(true.B)
+        dut.io.resWr.bits.rowAddr.expect(3.U)
+        dut.io.resWr.bits.data(0).expect(11.S)
+        dut.io.resWr.bits.data(1).expect(12.S)
+        dut.io.done.valid.expect(false.B)
+        dut.clock.step()
+      }
+
+      // Accept row 3.
       dut.io.resWr.ready.poke(true.B)
       dut.io.done.valid.expect(true.B)
       dut.clock.step()

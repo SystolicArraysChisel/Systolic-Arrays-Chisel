@@ -6,7 +6,7 @@
   "out_depth": 4096,
   "max_m": 64,
   "acc_width": 32,
-  "baud": 115200,
+  "baud": 2000000,
   "rx_fifo_depth": 16,
   "clock_hz": 50000000
 }

@@ -6,7 +6,7 @@ import chisel3.util._
 case class BoardConfig(
     clockHz: Int = 100_000_000, // Clock frequency in Hz
     baud: Int =
-      115_200, // UART speed in bits per second. Must match the Python host.
+      2_000_000, // UART speed in bits per second. Must match the host.
     rxFifoDepth: Int =
       16, // Bytes RxFifo can hold while the decoder is busy; when full, the next byte is lost.
     frameTimeout: Int =
@@ -55,7 +55,7 @@ case class BoardConfig(
 object BoardConfig {
 
   val nexys: BoardConfig =
-    BoardConfig() // The real board: 100 MHz, 115 200 baud.
+    BoardConfig() // The real board: 100 MHz, 2 Mbaud.
 
   /** The Tpu on the real board: runs at 100 MHz directly from the 100 MHz board clock.
     * Timing closure is fully achieved (WNS > 0) thanks to BRAM inference and pipelining.

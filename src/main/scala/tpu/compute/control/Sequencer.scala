@@ -9,9 +9,11 @@ import ifaces._
   * Sequences tiled matrix-multiplication commands across the data mover
   * and accumulator.
   *
-  * The sequencer accepts one decoded instruction, issues the corresponding
-  * tile commands, and waits for the accumulator to finish each tile. It
-  * advances through the K dimension before moving to the next N tile.
+  * The sequencer accepts one decoded instruction and issues the corresponding
+  * tile commands as fast as the data mover and the accumulators accept them,
+  * without waiting for each tile to finish, so consecutive tiles overlap. It
+  * advances through the K dimension before moving to the next N tile, counts
+  * finished tiles on tileDone, and stays busy until the last one is done.
   */
 class Sequencer(c: SAConfig) extends Module {
   val io = IO(new Bundle {
@@ -25,9 +27,14 @@ class Sequencer(c: SAConfig) extends Module {
     // Accumulator <-> Sequencer interface
     val tileDone = Flipped(Valid(Bool()))
     val accCtrl = Decoupled(new AccCtrl(c))
+
+    // Pulse to the data mover: an output tile is written back, so the next
+    // N-tile's activations may enter the array (TileCmd.waitAcc).
+    val accFree = Output(Bool())
   })
 
   // The sequencer accepts instructions only while it is idle.
+  // sIssue: tiles left to issue. sWait: all issued, waiting for the last done.
   val sIdle :: sIssue :: sWait :: Nil = Enum(3)
   val state = RegInit(sIdle)
 
@@ -71,6 +78,13 @@ class Sequencer(c: SAConfig) extends Module {
   val lastK = (kOff + c.rows.U) === k
   val lastN = (nOff + c.cols.U) === n
 
+  // Position of the next tile to finish, to recognise its tileDone.
+  val doneKOff = RegInit(0.U(c.dimW.W))
+  val doneNOff = RegInit(0.U(c.dimW.W))
+  val doneLastK = (doneKOff + c.rows.U) === k
+  val doneLastN = (doneNOff + c.cols.U) === n
+  io.accFree := io.tileDone.valid && doneLastK && !doneLastN
+
   // An instruction is accepted only in the idle state.
   io.instr.ready := state === sIdle
   io.status.busy := state =/= sIdle
@@ -96,6 +110,7 @@ class Sequencer(c: SAConfig) extends Module {
   io.tileCmd.bits.ldA := ldA
   io.tileCmd.bits.ldB := ldB
   io.tileCmd.bits.m := m
+  io.tileCmd.bits.waitAcc := firstK && nOff =/= 0.U
 
   when(state =/= sIdle) {
     cycles := cycles + 1.U
@@ -122,6 +137,8 @@ class Sequencer(c: SAConfig) extends Module {
 
         kOff := 0.U
         nOff := 0.U
+        doneKOff := 0.U
+        doneNOff := 0.U
         bColBase := io.instr.bits.bAddr
         bTileAddr := io.instr.bits.bAddr
 
@@ -136,24 +153,15 @@ class Sequencer(c: SAConfig) extends Module {
     }
 
     is(sIssue) {
-      // Wait until both downstream modules have accepted their tile commands.
-      when(io.accCtrl.fire) { 
-        accSent := true.B 
+      // Wait until both downstream modules have accepted their tile commands,
+      // then move straight on to the next tile.
+      when(io.accCtrl.fire) {
+        accSent := true.B
       }
-      when(io.tileCmd.fire) { 
-        cmdSent := true.B 
+      when(io.tileCmd.fire) {
+        cmdSent := true.B
       }
-      when((accSent || io.accCtrl.fire) && (cmdSent || io.tileCmd.fire)) { 
-        state := sWait 
-      }
-    }
-
-    is(sWait) {
-      // Wait for the accumulator before issuing the next tile.
-      when(io.tileDone.valid) {
-        busyPeCycles := busyPeCycles + 
-          (m << log2Ceil(c.rows * c.cols))
-
+      when((accSent || io.accCtrl.fire) && (cmdSent || io.tileCmd.fire)) {
         accSent := false.B
         cmdSent := false.B
 
@@ -161,7 +169,6 @@ class Sequencer(c: SAConfig) extends Module {
         when(!lastK) {
           kOff := kOff + c.rows.U
           bTileAddr := bTileAddr + bRowStep
-          state := sIssue
         }
         .elsewhen(!lastN) {
           // Once K is complete, reset K and advance to the next N tile.
@@ -170,18 +177,30 @@ class Sequencer(c: SAConfig) extends Module {
           val nextColBase = (bColBase + c.cols.U)(c.addrW - 1, 0)
           bColBase := nextColBase
           bTileAddr := nextColBase
-          state := sIssue
         }
         .otherwise {
-          // The complete matrix multiplication has finished.
-          state := sIdle
+          // Every tile is issued: wait for them to finish.
+          state := sWait
         }
       }
     }
   }
-}
 
-/**
-  * TODO: Improve performance by not waiting for the 
-  * accumulator to finish before issuing the next tile command.
-  */
+  // Count finished tiles, in issue order, in both busy states.
+  when(state =/= sIdle && io.tileDone.valid) {
+    busyPeCycles := busyPeCycles +
+      (m << log2Ceil(c.rows * c.cols))
+
+    when(!doneLastK) {
+      doneKOff := doneKOff + c.rows.U
+    }
+    .elsewhen(!doneLastN) {
+      doneKOff := 0.U
+      doneNOff := doneNOff + c.cols.U
+    }
+    .otherwise {
+      // The complete matrix multiplication has finished.
+      state := sIdle
+    }
+  }
+}

@@ -66,6 +66,8 @@ class Accumulators(c: SAConfig) extends Module {
   val accumPipeData = Reg(Vec(c.cols, c.accT))
   val accumPipeFirst = RegInit(false.B)
   val accumPipeLastRow = RegInit(false.B)
+  // The row's own tile is the last K-tile: ctrl may already hold the next tile.
+  val accumPipeTileLast = RegInit(false.B)
 
   // Stage 0 registration.
   when(state === sAccum && io.in.valid) {
@@ -74,6 +76,7 @@ class Accumulators(c: SAConfig) extends Module {
     accumPipeData := io.in.bits
     accumPipeFirst := first
     accumPipeLastRow := (rowCounter === m - 1.U)
+    accumPipeTileLast := last
   } .otherwise {
     accumPipeValid := false.B
     accumPipeLastRow := false.B
@@ -125,15 +128,24 @@ class Accumulators(c: SAConfig) extends Module {
     memRdData(col) := accMem(col).read(rdAddr, rdEn)
   }
 
+  // Back-to-back tiles with m = 1 read a row in the cycle stage 1 writes
+  // it: forward the written sum instead of the stale memory output.
+  val accumWrData = Wire(Vec(c.cols, c.accT))
+  val fwdHit = RegNext(accumPipeValid && accumRdEn && accumPipeRow === rowCounter, false.B)
+  val fwdData = RegNext(accumWrData)
+  val accumRdData = Mux(fwdHit, fwdData, memRdData)
+
   // Stage 1 write datapath.
+  for (col <- 0 until c.cols) {
+    accumWrData(col) := Mux(
+      accumPipeFirst,
+      accumPipeData(col),
+      accumRdData(col) + accumPipeData(col)
+    )
+  }
   when(accumPipeValid) {
     for (col <- 0 until c.cols) {
-      val writeData = Mux(
-        accumPipeFirst,
-        accumPipeData(col),
-        memRdData(col) + accumPipeData(col)
-      )
-      accMem(col).write(accumPipeRow, writeData)
+      accMem(col).write(accumPipeRow, accumWrData(col))
     }
   }
 
@@ -174,7 +186,23 @@ class Accumulators(c: SAConfig) extends Module {
   }
 
   // Default interface assignments.
-  io.ctrl.ready := (state === sCtrl)
+  // The next K-tile's ctrl is also taken on the last row of a non-last tile,
+  // so its first row may follow in the very next cycle.
+  val lastRowNow = state === sAccum && io.in.valid && rowCounter === m - 1.U
+  io.ctrl.ready := (state === sCtrl) || (lastRowNow && !last)
+
+  def latchCtrl(): Unit = {
+    first := io.ctrl.bits.first
+    last := io.ctrl.bits.last
+    cAddr := io.ctrl.bits.cAddr
+    ldC := io.ctrl.bits.ldC
+    m := io.ctrl.bits.m
+    relu := io.ctrl.bits.relu
+    requant := io.ctrl.bits.requant
+    shift := io.ctrl.bits.shift
+    toInput := io.ctrl.bits.toInput
+    rowCounter := 0.U
+  }
   io.done.valid := false.B
   io.done.bits := true.B
 
@@ -193,17 +221,7 @@ class Accumulators(c: SAConfig) extends Module {
       pipeP_valid := false.B
 
       when(io.ctrl.fire) {
-        first := io.ctrl.bits.first
-        last := io.ctrl.bits.last
-        cAddr := io.ctrl.bits.cAddr
-        ldC := io.ctrl.bits.ldC
-        m := io.ctrl.bits.m
-        relu := io.ctrl.bits.relu
-        requant := io.ctrl.bits.requant
-        shift := io.ctrl.bits.shift
-        toInput := io.ctrl.bits.toInput
-
-        rowCounter := 0.U
+        latchCtrl()
         state := sAccum
       }
     }
@@ -214,7 +232,11 @@ class Accumulators(c: SAConfig) extends Module {
           rowCounter := 0.U
           when(!last) {
             io.done.valid := true.B
-            state := sCtrl
+            when(io.ctrl.fire) {
+              latchCtrl()
+            } .otherwise {
+              state := sCtrl
+            }
           }
         } .otherwise {
           rowCounter := rowCounter + 1.U
@@ -223,7 +245,7 @@ class Accumulators(c: SAConfig) extends Module {
 
       // Transition to sWrite when the last row 
       // has been committed by stage 1.
-      when(accumPipeValid && accumPipeLastRow && last) {
+      when(accumPipeValid && accumPipeLastRow && accumPipeTileLast) {
         state := sWrite
         wrReadCounter := 0.U
         wrRowAddr := cAddr >> log2Ceil(c.cols)

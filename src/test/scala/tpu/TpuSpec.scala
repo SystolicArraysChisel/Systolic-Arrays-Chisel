@@ -188,8 +188,11 @@ class TpuSpec extends AnyFlatSpec with ChiselScalatestTester {
       val rnd = new Random(1)
       val st = check(host, RefModel.randomMatrix(rnd, 4, 8), RefModel.randomMatrix(rnd, 8, 8))
       assert(st.busyPe == 4L * 8 * 8)
-      // 4 tiles of at least: weight load + m rows + array latency
-      assert(st.cycles >= 4L * (c.rows + 4 + c.arrayLatency), s"cycles = ${st.cycles}")
+      // 4 tiles of m = 4 rows. Tiles overlap: after the first weight load, at
+      // least one tile every max(m, arrayLatency + rows) cycles.
+      assert(st.cycles >= c.rows + 4L * (4 max (c.arrayLatency + c.rows)), s"cycles = ${st.cycles}")
+      // 84 cycles when every tile waited for the previous one.
+      assert(st.cycles < 84, s"cycles = ${st.cycles}")
     }
   }
 

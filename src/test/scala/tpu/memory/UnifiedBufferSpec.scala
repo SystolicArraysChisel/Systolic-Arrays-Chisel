@@ -28,6 +28,8 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
 
     dut.io.mvRdReq.valid.poke(false.B)
     dut.io.mvRdResp.ready.poke(true.B) // DataMover always accepts a row read.
+    dut.io.mvWRdReq.valid.poke(false.B)
+    dut.io.mvWRdResp.ready.poke(true.B)
 
     dut.io.resWr.valid.poke(false.B)
   }
@@ -452,6 +454,68 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
         requestHostRead(dut, c, row << c.colBits)
         dut.io.hostRdResp.valid.expect(true.B)
         dut.io.hostRdResp.bits.expect(7.S)
+      }
+    }
+  }
+
+  it should "read an activation row and a weight row in the same cycle" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+        for (r <- 0 until 2; b <- 0 until c.banks)
+          writeInput(dut, c, b + (r << c.bankBits), r * 10 + b + 1)
+
+        dut.io.mvRdReq.bits.rowAddr.poke(0.U)
+        dut.io.mvRdReq.valid.poke(true.B)
+        dut.io.mvWRdReq.bits.rowAddr.poke(1.U)
+        dut.io.mvWRdReq.valid.poke(true.B)
+        dut.io.mvRdReq.ready.expect(true.B)
+        dut.io.mvWRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.mvRdReq.valid.poke(false.B)
+        dut.io.mvWRdReq.valid.poke(false.B)
+
+        dut.io.mvRdResp.valid.expect(true.B)
+        dut.io.mvWRdResp.valid.expect(true.B)
+        for (b <- 0 until c.banks) {
+          dut.io.mvRdResp.bits(b).expect((b + 1).S)
+          dut.io.mvWRdResp.bits(b).expect((10 + b + 1).S)
+        }
+      }
+    }
+  }
+
+  it should "stall activation reads, but not weight reads, during a host write" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+        for (b <- 0 until c.banks) writeInput(dut, c, b, b + 1)
+
+        // Host write to row 1 in the same cycle as both row reads of row 0.
+        dut.io.hostWr.bits.addr.poke((1 << c.bankBits).U)
+        dut.io.hostWr.bits.data.poke(-7.S)
+        dut.io.hostWr.valid.poke(true.B)
+        dut.io.mvRdReq.bits.rowAddr.poke(0.U)
+        dut.io.mvRdReq.valid.poke(true.B)
+        dut.io.mvWRdReq.bits.rowAddr.poke(0.U)
+        dut.io.mvWRdReq.valid.poke(true.B)
+        dut.io.hostWr.ready.expect(true.B)
+        dut.io.mvRdReq.ready.expect(false.B)
+        dut.io.mvWRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.hostWr.valid.poke(false.B)
+        dut.io.mvWRdReq.valid.poke(false.B)
+
+        // The weight row came back; the activation read is accepted now.
+        dut.io.mvWRdResp.valid.expect(true.B)
+        dut.io.mvRdResp.valid.expect(false.B)
+        dut.io.mvRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.mvRdReq.valid.poke(false.B)
+        dut.io.mvRdResp.valid.expect(true.B)
+        for (b <- 0 until c.banks) dut.io.mvRdResp.bits(b).expect((b + 1).S)
+
+        assert(readInputRow(dut, c, 1).head == -7)
       }
     }
   }

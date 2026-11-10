@@ -32,6 +32,10 @@ class DecoderWithBuffer(c: SAConfig, b: BoardConfig) extends Module {
   buf.io.mvRdReq <> io.mvRdReq
   io.mvRdResp <> buf.io.mvRdResp
   buf.io.resWr <> io.resWr
+  // weight port unused here
+  buf.io.mvWRdReq.valid := false.B
+  buf.io.mvWRdReq.bits := DontCare
+  buf.io.mvWRdResp.ready := true.B
 
   // no sequencer: MATMUL is not used here
   dec.io.instr.ready := false.B

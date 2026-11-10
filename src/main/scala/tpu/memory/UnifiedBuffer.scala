@@ -16,9 +16,12 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     val hostRdReq = Flipped(Decoupled(new BufReadReq(c)))
     val hostRdResp = Decoupled(c.accT)
 
-    // DataMover <-> UnifiedBuffer interface
+    // DataMover <-> UnifiedBuffer interface: activation rows (port A,
+    // stalled by writes) and weight rows (port B, never stalled)
     val mvRdReq = Flipped(Decoupled(new BufRowReq(c)))
     val mvRdResp = Decoupled(Vec(c.banks, c.inT))
+    val mvWRdReq = Flipped(Decoupled(new BufRowReq(c)))
+    val mvWRdResp = Decoupled(Vec(c.banks, c.inT))
 
     // Accumulator <-> UnifiedBuffer interface
     val resWr = Flipped(Decoupled(new BufResultWrite(c)))
@@ -47,21 +50,27 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     * Input memory for A and B.
     *
     * The host writes one element at a time through hostWr. The data
-    * mover reads one complete row per cycle, with one element from each
-    * bank.
+    * mover reads up to two complete rows per cycle (one activation row,
+    * one weight row), with one element from each bank.
     */
   val inputMem = Seq.fill(c.banks) {
     SyncReadMem(c.inDepth / c.banks, c.inT)
   }
 
   /**
-    * Writes into the input memory: a whole row of C written back by the
-    * accumulators (toInput), or one host-provided element.
+    * Input-memory ports: each bank has exactly two, so Vivado maps it to
+    * one true dual-port BRAM.
     *
-    * A written-back row is one element per bank at the same row address
-    * (cols == banks, and cAddr is a multiple of banks), so it uses every
-    * bank's write port in that cycle. It wins: hostWr.ready drops for that
-    * cycle and the decoder holds its element until the next one.
+    * Port A (read/write), by priority:
+    *  1. a whole row of C written back by the accumulators (toInput): one
+    *     element per bank at the same row address (cols == banks, and
+    *     cAddr is a multiple of banks);
+    *  2. one host-provided element;
+    *  3. an activation row for the data mover.
+    * Port B (read only): a weight row for the data mover.
+    *
+    * A write stalls activation reads for that cycle (mvRdReq.ready drops);
+    * the write-back also holds the host for that cycle (hostWr.ready drops).
     */
   require(c.cols == c.banks, "write-back to the input memory needs one bank per column")
 
@@ -69,47 +78,34 @@ class UnifiedBuffer(c: SAConfig) extends Module {
   val resInRow = io.resWr.bits.rowAddr(c.rowAddrW - 1, 0)
 
   io.hostWr.ready := !resToInput
+  io.mvRdReq.ready := !resToInput && !io.hostWr.valid
+  io.mvWRdReq.ready := true.B
 
   val (hostWrBank, hostWrRow) = splitAddr(io.hostWr.bits.addr, c.bankBits)
 
-  when (resToInput) {
-    for (b <- 0 until c.banks) {
-      // Requantized values fit in inWidth bits: keep only those.
-      inputMem(b).write(
-        resInRow,
-        io.resWr.bits.data(b)(c.inWidth - 1, 0).asSInt)
-    }
-  } .elsewhen (io.hostWr.fire) {
-    for (b <- 0 until c.banks) {
-      when (hostWrBank === b.U) {
-        inputMem(b).write(
-          hostWrRow, 
-          io.hostWr.bits.data)
-      }
-    }
-  }
-
-  /**
-    * Reads one complete input-memory row for the data mover.
-    *
-    * All banks use the same row address, so the result contains one
-    * element from each bank. SyncReadMem has one cycle of read latency.
-    */
-  io.mvRdReq.ready := true.B
-
   val mvRdRespVec = Wire(Vec(c.banks, c.inT))
+  val mvWRdRespVec = Wire(Vec(c.banks, c.inT))
   for (b <- 0 until c.banks) {
-    mvRdRespVec(b) := inputMem(b).read(
-      io.mvRdReq.bits.rowAddr, 
-      io.mvRdReq.valid)
+    val hostHere = io.hostWr.fire && hostWrBank === b.U
+    val isWrite = resToInput || hostHere
+    val addrA = Mux(resToInput, resInRow, Mux(hostHere, hostWrRow, io.mvRdReq.bits.rowAddr))
+    // Requantized values fit in inWidth bits: keep only those.
+    val dataA = Mux(resToInput, io.resWr.bits.data(b)(c.inWidth - 1, 0).asSInt, io.hostWr.bits.data)
+    mvRdRespVec(b) := inputMem(b).readWrite(addrA, dataA, isWrite || io.mvRdReq.fire, isWrite)
+    mvWRdRespVec(b) := inputMem(b).read(io.mvWRdReq.bits.rowAddr, io.mvWRdReq.valid)
   }
-  io.mvRdResp.bits := mvRdRespVec
-  // The response is valid one cycle after the request.
-  io.mvRdResp.valid := RegNext(io.mvRdReq.valid, false.B)
 
-  // No backpressure on DataMover: it must always be ready to accept the response.
-  assert(!io.mvRdResp.valid || io.mvRdResp.ready, 
+  // Both responses are valid one cycle after their request.
+  io.mvRdResp.bits := mvRdRespVec
+  io.mvRdResp.valid := RegNext(io.mvRdReq.fire, false.B)
+  io.mvWRdResp.bits := mvWRdRespVec
+  io.mvWRdResp.valid := RegNext(io.mvWRdReq.valid, false.B)
+
+  // No backpressure on DataMover: it must always be ready to accept the responses.
+  assert(!io.mvRdResp.valid || io.mvRdResp.ready,
     "UnifiedBuffer: mvRdResp not accepted, DataMover must always be ready")
+  assert(!io.mvWRdResp.valid || io.mvWRdResp.ready,
+    "UnifiedBuffer: mvWRdResp not accepted, DataMover must always be ready")
 
 
 

@@ -341,4 +341,62 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       readWrites(dut, expected)
     }
   }
+
+  /** Streams K-tiles of one output tile with no gap between them: the next
+    * tile's ctrl is accepted on the last row of the previous one.
+    */
+  private def sendBackToBack(dut: Accumulators, tiles: Seq[Seq[Seq[Int]]], ldC: Int): Unit = {
+    def pokeCtrl(i: Int): Unit = {
+      dut.io.ctrl.bits.first.poke((i == 0).B)
+      dut.io.ctrl.bits.last.poke((i == tiles.length - 1).B)
+      dut.io.ctrl.bits.cAddr.poke(0.U)
+      dut.io.ctrl.bits.ldC.poke(ldC.U)
+      dut.io.ctrl.bits.m.poke(tiles(i).length.U)
+      dut.io.ctrl.bits.requant.poke(false.B)
+      dut.io.ctrl.bits.shift.poke(0.U)
+      dut.io.ctrl.bits.relu.poke(false.B)
+      dut.io.ctrl.bits.toInput.poke(false.B)
+      dut.io.ctrl.valid.poke(true.B)
+    }
+    pokeCtrl(0)
+    dut.io.ctrl.ready.expect(true.B)
+    dut.clock.step()
+    dut.io.ctrl.valid.poke(false.B)
+
+    for ((tile, i) <- tiles.zipWithIndex; (row, r) <- tile.zipWithIndex) {
+      row.zipWithIndex.foreach { case (v, col) => dut.io.in.bits(col).poke(v.S) }
+      dut.io.in.valid.poke(true.B)
+      val lastRow = r == tile.length - 1
+      if (lastRow && i < tiles.length - 1) {
+        pokeCtrl(i + 1)
+        dut.io.ctrl.ready.expect(true.B)
+      } else {
+        dut.io.ctrl.valid.poke(false.B)
+        dut.io.ctrl.ready.expect(false.B)
+      }
+      dut.io.done.valid.expect((lastRow && i < tiles.length - 1).B)
+      dut.clock.step()
+    }
+    dut.io.in.valid.poke(false.B)
+    dut.io.ctrl.valid.poke(false.B)
+  }
+
+  it should "accumulate K-tiles that arrive back to back" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+      sendBackToBack(dut, Seq(Seq(Seq(1, 2), Seq(3, 4)), Seq(Seq(10, 20), Seq(-3, 6)), Seq(Seq(5, 5), Seq(1, 1))), ldC = 4)
+      readWrites(dut, Seq(0 -> Seq(16, 27), 2 -> Seq(1, 11)))
+    }
+  }
+
+  // shortcut: the simulator reads new data on a same-cycle read and write, so
+  // this passes even without the m = 1 forwarding; only the hardware needs it.
+  it should "accumulate back-to-back tiles that have a single row" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+      sendBackToBack(dut, Seq(Seq(Seq(1, -2)), Seq(Seq(10, 20)), Seq(Seq(100, 200))), ldC = 2)
+      readWrites(dut, Seq(0 -> Seq(111, 218)))
+    }
+  }
 }
+

@@ -91,6 +91,7 @@ class DataMoverSpec extends AnyFlatSpec with ChiselScalatestTester {
         } else { // Otherwise, expect aOut to be valid and wOut to be invalid.
           dut.io.wOut.valid.expect(false.B)
           dut.io.aOut.valid.expect(true.B)
+          dut.io.aFirst.expect((beat == c.rows).B)
 
           response.zipWithIndex.foreach { case (value, bank) =>
             dut.io.aOut.bits(bank).expect(value.S)

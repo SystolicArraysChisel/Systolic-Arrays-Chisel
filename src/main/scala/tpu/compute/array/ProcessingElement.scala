@@ -9,10 +9,16 @@ import ifaces._
 /**
   * One cell of the weight-stationary systolic array.
   *
-  * Holds one weight, which moves down one PE row on every cycle with
-  * wEn = 1 and stays put otherwise. Every cycle it computes
-  * psumOut = psumIn + aIn * w and forwards aIn to the right. Both outputs
-  * are registered: one register stage per hop (see SAConfig.arrayLatency).
+  * Double-buffered weight: the shadow weight moves down one PE row on every
+  * cycle with wEn = 1 (the shift chain), while the active weight w feeds the
+  * multiplier. swapIn copies shadow into w; it travels to the right next to
+  * aIn, so it reaches every PE together with the first activation row of a
+  * tile, and that row already uses the new weight. The next tile can
+  * therefore shift in while the current one computes.
+  *
+  * Every cycle it computes psumOut = psumIn + aIn * w and forwards aIn and
+  * swapIn to the right. All outputs are registered: one register stage per
+  * hop (see SAConfig.arrayLatency).
   */
 class ProcessingElement(c: SAConfig) extends Module {
   val io = IO(new Bundle {
@@ -25,18 +31,27 @@ class ProcessingElement(c: SAConfig) extends Module {
     val aIn = Input(c.inT)
     val aOut = Output(c.inT)
 
+    // Weight swap, left to right next to aIn.
+    val swapIn = Input(Bool())
+    val swapOut = Output(Bool())
+
     // Partial sums, top to bottom.
     val psumIn = Input(c.accT)
     val psumOut = Output(c.accT)
   })
 
-  val w = RegEnable(io.wIn, io.wEn)
-  io.wOut := w
+  val shadow = RegEnable(io.wIn, io.wEn)
+  io.wOut := shadow
+
+  val w = RegEnable(shadow, io.swapIn)
+  // The swap cycle already computes with the new weight: no bubble between tiles.
+  val wEff = Mux(io.swapIn, shadow, w)
 
   io.aOut := RegNext(io.aIn)
+  io.swapOut := RegNext(io.swapIn, false.B)
 
   // + keeps accWidth bits, so an overflow wraps like int32 arithmetic.
-  val psum = RegNext(io.psumIn + io.aIn * w)
+  val psum = RegNext(io.psumIn + io.aIn * wEff)
   io.psumOut := psum
 
   // Vivado builds the 8x8 products from LUTs on its own: force a DSP slice.

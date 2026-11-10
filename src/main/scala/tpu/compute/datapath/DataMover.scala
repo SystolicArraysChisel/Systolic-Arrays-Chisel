@@ -24,6 +24,8 @@ class DataMover(c: SAConfig) extends Module {
     // DataMover <-> SystolicArray interface
     val wOut = Valid(Vec(c.cols, c.inT))
     val aOut = Valid(Vec(c.rows, c.inT))
+    // Set with the first activation row of the tile: makes its weights active.
+    val aFirst = Output(Bool())
   })
 
 
@@ -69,6 +71,7 @@ class DataMover(c: SAConfig) extends Module {
 	val isW = respCount < c.rows.U
 	io.wOut.valid := io.rdResp.valid && isW
 	io.aOut.valid := io.rdResp.valid && !isW
+	io.aFirst := respCount === c.rows.U
 	// TODO: This is not correct if banks > cols or rows (to handle after MVP).
 	io.wOut.bits := VecInit(io.rdResp.bits.take(c.cols))
 	io.aOut.bits := VecInit(io.rdResp.bits.take(c.rows))

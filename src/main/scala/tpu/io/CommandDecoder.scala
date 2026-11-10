@@ -122,7 +122,7 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
   io.instr.bits.op := Opcode.Matmul
   io.instr.bits.aAddr := field16(Matmul.AAddrOffset - 1)(c.addrW - 1, 0)
   io.instr.bits.bAddr := field16(Matmul.BAddrOffset - 1)(c.addrW - 1, 0)
-  io.instr.bits.cAddr := field16(Matmul.CAddrOffset - 1)(c.outAddrW - 1, 0)
+  io.instr.bits.cAddr := field16(Matmul.CAddrOffset - 1)(c.resAddrW - 1, 0)
   io.instr.bits.m := field16(Matmul.MOffset - 1)
   io.instr.bits.k := field16(Matmul.KOffset - 1)
   io.instr.bits.n := field16(Matmul.NOffset - 1)
@@ -131,6 +131,7 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
   io.instr.bits.ldC := field16(Matmul.LdCOffset - 1)
   io.instr.bits.requant := mmFlags(Matmul.RequantBit)
   io.instr.bits.relu := mmFlags(Matmul.ReluBit)
+  io.instr.bits.toInput := mmFlags(Matmul.ToInputBit)
   io.instr.bits.shift := mmShift(c.shiftW - 1, 0)
 
   switch(state) {
@@ -203,7 +204,7 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
           }
         }
         is(Op.Matmul.U) {
-          when(mmShift >= c.accWidth.U || mmFlags(7, 2) =/= 0.U) {
+          when(mmShift >= c.accWidth.U || mmFlags(7, Matmul.usedFlagBits) =/= 0.U) {
             errEvent := true.B
           }.otherwise {
             state := DecoderState.sInstr

@@ -53,6 +53,15 @@ case class SAConfig(
   ) // Bits of an element address in the result memory.
   val outRowAddrW: Int = outAddrW - colBits; // Bits of a row address inside the result memory.
 
+  /* Bits of a C address. C goes to the result memory, or back to the input
+   * memory when a MATMUL writes back (toInput), so a C address must reach both. */
+  val resAddrW: Int = addrW max outAddrW
+  val resRowAddrW: Int = resAddrW - colBits // Bits of a row address of C, in either memory.
+
+  /* Largest requantized value: results saturate to [-inMax, inMax] so that
+   * they fit in an input element and can be written back as the next A. */
+  val inMax: BigInt = (BigInt(1) << (inWidth - 1)) - 1
+
   val shiftW: Int = log2Ceil(accWidth) // Bits of the requantization shift
   val dimW: Int =
     16; // width, in bits, of the hardware registers and wires that hold matrix sizes

@@ -60,7 +60,7 @@ object HostFrames {
 case class SeenTileCmd(aAddr: Int, bAddr: Int, ldA: Int, ldB: Int, m: Int)
 case class SeenAccCtrl(
     first: Boolean, last: Boolean, cAddr: Int, ldC: Int, m: Int,
-    relu: Boolean, requant: Boolean, shift: Int
+    relu: Boolean, requant: Boolean, shift: Int, toInput: Boolean
 )
 
 object Tiles {
@@ -80,8 +80,9 @@ object Tiles {
       ),
       SeenAccCtrl(
         first = kOff == 0, last = kOff + c.rows == mm.k,
-        (mm.cAddr + nOff) % (1 << c.outAddrW), mm.ldC, mm.m,
-        relu = (mm.flags & 2) != 0, requant = (mm.flags & 1) != 0, mm.shift
+        (mm.cAddr + nOff) % (1 << c.resAddrW), mm.ldC, mm.m,
+        relu = (mm.flags & 2) != 0, requant = (mm.flags & 1) != 0, mm.shift,
+        toInput = (mm.flags & 4) != 0
       )
     )
 }
@@ -181,7 +182,8 @@ class DecoderBench(dut: DecoderWithSequencer, seed: Int = 0, randomReady: Boolea
     SeenAccCtrl(
       a.first.peekBoolean(), a.last.peekBoolean(), a.cAddr.peekInt().toInt,
       a.ldC.peekInt().toInt, a.m.peekInt().toInt,
-      a.relu.peekBoolean(), a.requant.peekBoolean(), a.shift.peekInt().toInt
+      a.relu.peekBoolean(), a.requant.peekBoolean(), a.shift.peekInt().toInt,
+      a.toInput.peekBoolean()
     )
   }
 

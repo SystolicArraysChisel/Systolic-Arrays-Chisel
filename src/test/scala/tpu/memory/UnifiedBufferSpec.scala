@@ -78,6 +78,7 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
       data: Seq[Int]
   ): Unit = {
     dut.io.resWr.bits.rowAddr.poke(rowAddr.U)
+    dut.io.resWr.bits.toInput.poke(false.B)
     data.zipWithIndex.foreach { case (value, col) =>
       dut.io.resWr.bits.data(col).poke(value.S)
     }
@@ -406,6 +407,51 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
           dut.io.hostRdResp.ready.poke(true.B)
           dut.clock.step()
         }
+      }
+    }
+  }
+
+  it should "write a result row back into the input memory (toInput), ahead of a host write" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+
+        val row = 5
+        // Requantized values, one per bank; negative ones check the sign survives truncation.
+        val values = (0 until c.cols).map(col => if (col % 2 == 0) -100 + col else 50 + col)
+
+        // The result memory already holds a row at that address: it must not change.
+        writeResultRow(dut, c, row, Seq.fill(c.cols)(7))
+
+        // A host write to another row is offered in the same cycle.
+        val hostAddr = 1 << c.bankBits // row 1, bank 0
+        dut.io.hostWr.bits.addr.poke(hostAddr.U)
+        dut.io.hostWr.bits.data.poke(42.S)
+        dut.io.hostWr.valid.poke(true.B)
+
+        dut.io.resWr.bits.rowAddr.poke(row.U)
+        dut.io.resWr.bits.toInput.poke(true.B)
+        values.zipWithIndex.foreach { case (v, col) => dut.io.resWr.bits.data(col).poke(v.S) }
+        dut.io.resWr.valid.poke(true.B)
+
+        // The written-back row takes every bank: the host write must wait.
+        dut.io.resWr.ready.expect(true.B)
+        dut.io.hostWr.ready.expect(false.B)
+        dut.clock.step()
+        dut.io.resWr.valid.poke(false.B)
+
+        // Next cycle the host write goes through.
+        dut.io.hostWr.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.hostWr.valid.poke(false.B)
+
+        assert(readInputRow(dut, c, row) == values)
+        assert(readInputRow(dut, c, 1).head == 42)
+
+        // The result memory row is untouched.
+        requestHostRead(dut, c, row << c.colBits)
+        dut.io.hostRdResp.valid.expect(true.B)
+        dut.io.hostRdResp.bits.expect(7.S)
       }
     }
   }

@@ -24,7 +24,7 @@ TEST(Config, LoadsEveryField) {
     EXPECT_EQ(cfg.out_depth, 4096);
     EXPECT_EQ(cfg.max_m, 64);
     EXPECT_EQ(cfg.acc_width, 32);
-    EXPECT_EQ(cfg.baud, 115'200);
+    EXPECT_EQ(cfg.baud, 2'000'000);
     EXPECT_EQ(cfg.rx_fifo_depth, 16);
     EXPECT_EQ(cfg.clock_hz, 50'000'000);
 }

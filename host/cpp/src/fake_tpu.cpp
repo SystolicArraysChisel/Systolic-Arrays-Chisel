@@ -119,7 +119,7 @@ void FakeTpu::do_matmul(ByteView f) {
     const int ld_a = le16(f, 13), ld_b = le16(f, 15), ld_c = le16(f, 17);
     const int flags = f[19];
     const int shift = f[20];
-    if (shift >= cfg_.acc_width || (flags & ~0b11) != 0) {
+    if (shift >= cfg_.acc_width || (flags & ~0b111) != 0) {
         error = true;
         return;
     }
@@ -145,10 +145,18 @@ void FakeTpu::do_matmul(ByteView f) {
     const Matrix<std::int64_t> c =
         matmul_ref(a, b, (flags >> REQUANT_BIT & 1) != 0, (flags >> RELU_BIT & 1) != 0, shift,
                    cfg_.acc_width);
+    // toInput: C goes back into the input memory, keeping the low byte of each
+    // element like the hardware (requant has already saturated it to int8).
+    const bool to_input = (flags >> TO_INPUT_BIT & 1) != 0;
     for (int i = 0; i < m; ++i) {
         for (int j = 0; j < n; ++j) {
-            res[static_cast<std::size_t>(c_addr + i * ld_c + j) % res.size()] =
-                c(static_cast<std::size_t>(i), static_cast<std::size_t>(j));
+            const std::int64_t v = c(static_cast<std::size_t>(i), static_cast<std::size_t>(j));
+            const auto at = static_cast<std::size_t>(c_addr + i * ld_c + j);
+            if (to_input) {
+                inp[at % inp.size()] = static_cast<std::int8_t>(v);
+            } else {
+                res[at % res.size()] = v;
+            }
         }
     }
 

@@ -32,12 +32,13 @@ class Accumulators(c: SAConfig) extends Module {
   // Control fields latched when a new tile command is accepted.
   val first = RegInit(false.B)
   val last = RegInit(false.B)
-  val cAddr = RegInit(0.U(c.outAddrW.W))
+  val cAddr = RegInit(0.U(c.resAddrW.W))
   val ldC = RegInit(0.U(c.dimW.W))
   val m = RegInit(0.U(c.dimW.W))
   val relu = RegInit(false.B)
   val requant = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
+  val toInput = RegInit(false.B) // write the rows into the input memory
 
   // Control, accumulation, and write phases of the module.
   val sCtrl :: sAccum :: sWrite :: Nil = Enum(3)
@@ -83,28 +84,28 @@ class Accumulators(c: SAConfig) extends Module {
   // Stage Rnd: BRAM data arrives, compute 33-bit 
   // widening + rounding sum, and register into pipeRnd.
   // Stage P: register rounded data, compute variable barrel shift,
-  // symmetric int8 clamp, ReLU, and register into pipeP.
+  // symmetric clamp to [-inMax, inMax], ReLU, and register into pipeP.
   // Stage O: drive io.resWr decoupled interface.
   val wrReadCounter = RegInit(0.U(c.dimW.W))
-  val wrRowAddr = RegInit(0.U(c.outAddrW.W))
+  val wrRowAddr = RegInit(0.U(c.resAddrW.W))
   val wrReadsDone = RegInit(false.B)
 
   // R -> Rnd pipeline registers.
   val pipeR_valid = RegInit(false.B)
   val pipeR_rdAddr = RegInit(0.U(c.dimW.W))
-  val pipeR_rowAddr = Reg(UInt(c.outAddrW.W))
+  val pipeR_rowAddr = Reg(UInt(c.resAddrW.W))
   val pipeR_last = RegInit(false.B)
 
   // Rnd -> P pipeline registers.
   val pipeRnd_valid = RegInit(false.B)
-  val pipeRnd_rowAddr = Reg(UInt(c.outAddrW.W))
+  val pipeRnd_rowAddr = Reg(UInt(c.resAddrW.W))
   val pipeRnd_rounded = Reg(Vec(c.cols, SInt((c.accWidth + 1).W)))
   val pipeRnd_raw = Reg(Vec(c.cols, c.accT))
   val pipeRnd_last = RegInit(false.B)
 
   // P -> O pipeline registers.
   val pipeP_valid = RegInit(false.B)
-  val pipeP_rowAddr = Reg(UInt(c.outAddrW.W))
+  val pipeP_rowAddr = Reg(UInt(c.resAddrW.W))
   val pipeP_data = Reg(Vec(c.cols, c.accT))
   val pipeP_last = RegInit(false.B)
 
@@ -157,8 +158,8 @@ class Accumulators(c: SAConfig) extends Module {
     val widenedValue = Cat(rawValue.head(1), rawValue).asSInt
 
     val requantized = (rounded >> shift).asSInt
-    val maxValue = 127.S((c.accWidth + 1).W)
-    val minValue = (-127).S((c.accWidth + 1).W)
+    val maxValue = c.inMax.S((c.accWidth + 1).W)
+    val minValue = (-c.inMax).S((c.accWidth + 1).W)
     val saturated = Mux(
       requantized > maxValue,
       maxValue,
@@ -180,6 +181,8 @@ class Accumulators(c: SAConfig) extends Module {
   io.resWr.valid := pipeP_valid
   io.resWr.bits.rowAddr := pipeP_rowAddr
   io.resWr.bits.data := pipeP_data
+  // Constant for the whole tile: only changes on the next ctrl, after the last write.
+  io.resWr.bits.toInput := toInput
 
   assert(!(io.in.valid && state =/= sAccum), "array output while accumulators not ready")
 
@@ -198,6 +201,7 @@ class Accumulators(c: SAConfig) extends Module {
         relu := io.ctrl.bits.relu
         requant := io.ctrl.bits.requant
         shift := io.ctrl.bits.shift
+        toInput := io.ctrl.bits.toInput
 
         rowCounter := 0.U
         state := sAccum

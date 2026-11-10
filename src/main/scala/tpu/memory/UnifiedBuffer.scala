@@ -55,16 +55,31 @@ class UnifiedBuffer(c: SAConfig) extends Module {
   }
 
   /**
-    * Writes one host-provided element to the selected input-memory bank.
+    * Writes into the input memory: a whole row of C written back by the
+    * accumulators (toInput), or one host-provided element.
     *
-    * hostWr.ready is permanently asserted because the input memory
-    * accepts one write request in every cycle.
+    * A written-back row is one element per bank at the same row address
+    * (cols == banks, and cAddr is a multiple of banks), so it uses every
+    * bank's write port in that cycle. It wins: hostWr.ready drops for that
+    * cycle and the decoder holds its element until the next one.
     */
-  io.hostWr.ready := true.B
+  require(c.cols == c.banks, "write-back to the input memory needs one bank per column")
+
+  val resToInput = io.resWr.valid && io.resWr.bits.toInput
+  val resInRow = io.resWr.bits.rowAddr(c.rowAddrW - 1, 0)
+
+  io.hostWr.ready := !resToInput
 
   val (hostWrBank, hostWrRow) = splitAddr(io.hostWr.bits.addr, c.bankBits)
 
-  when (io.hostWr.fire) {
+  when (resToInput) {
+    for (b <- 0 until c.banks) {
+      // Requantized values fit in inWidth bits: keep only those.
+      inputMem(b).write(
+        resInRow,
+        io.resWr.bits.data(b)(c.inWidth - 1, 0).asSInt)
+    }
+  } .elsewhen (io.hostWr.fire) {
     for (b <- 0 until c.banks) {
       when (hostWrBank === b.U) {
         inputMem(b).write(
@@ -113,17 +128,18 @@ class UnifiedBuffer(c: SAConfig) extends Module {
   }
 
   /**
-    * Writes one complete result row.
+    * Writes one complete result row, unless it goes to the input memory.
     *
     * Each element of resWr.bits.data is written to the memory
-    * corresponding to its column.
+    * corresponding to its column. resWr is always ready: both memories
+    * take a full row in any cycle.
     */
   io.resWr.ready := true.B
 
-  when (io.resWr.fire) {
+  when (io.resWr.fire && !io.resWr.bits.toInput) {
     for (col <- 0 until c.cols) {
       resultMem(col).write(
-        io.resWr.bits.rowAddr, 
+        io.resWr.bits.rowAddr(c.outRowAddrW - 1, 0),
         io.resWr.bits.data(col))
     }
   }

@@ -34,7 +34,7 @@ class Sequencer(c: SAConfig) extends Module {
   // Latched matrix addresses, dimensions, strides, 
   // and post-processing options.
   val aAddr = RegInit(0.U(c.addrW.W))
-  val cAddr = RegInit(0.U(c.outAddrW.W))
+  val cAddr = RegInit(0.U(c.resAddrW.W))
   val m = RegInit(0.U(c.dimW.W))
   val k = RegInit(0.U(c.dimW.W))
   val n = RegInit(0.U(c.dimW.W))
@@ -43,6 +43,7 @@ class Sequencer(c: SAConfig) extends Module {
   val ldC = RegInit(0.U(c.dimW.W))
   val requant = RegInit(false.B)
   val relu = RegInit(false.B)
+  val toInput = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
 
   // Offsets identify the current tile within the K and N dimensions.
@@ -86,6 +87,7 @@ class Sequencer(c: SAConfig) extends Module {
   io.accCtrl.bits.relu := relu
   io.accCtrl.bits.requant := requant
   io.accCtrl.bits.shift := shift
+  io.accCtrl.bits.toInput := toInput
 
   io.tileCmd.valid := (state === sIssue) && !cmdSent
   // Advance operand A by the K offset; bTileAddr already tracks the current B tile.
@@ -115,6 +117,7 @@ class Sequencer(c: SAConfig) extends Module {
         ldC := io.instr.bits.ldC
         requant := io.instr.bits.requant
         relu := io.instr.bits.relu
+        toInput := io.instr.bits.toInput
         shift := io.instr.bits.shift
 
         kOff := 0.U
@@ -181,4 +184,4 @@ class Sequencer(c: SAConfig) extends Module {
 /**
   * TODO: Improve performance by not waiting for the 
   * accumulator to finish before issuing the next tile command.
-  */
+  */

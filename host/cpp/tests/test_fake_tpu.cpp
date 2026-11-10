@@ -120,6 +120,29 @@ TEST(FakeTpu, MatmulAppliesRequantAndRelu) {
     EXPECT_EQ(std::vector<std::int64_t>(fake.res.begin(), fake.res.begin() + 16), c.data());
 }
 
+TEST(FakeTpu, ToInputWritesCBackIntoTheInputMemory) {
+    std::mt19937 rng(8);
+    std::uniform_int_distribution<int> dist(-128, 127);
+    Matrix<std::int8_t> a(4, 8), b(8, 4);
+    for (auto& v : a) v = static_cast<std::int8_t>(dist(rng));
+    for (auto& v : b) v = static_cast<std::int8_t>(dist(rng));
+    FakeTpu fake;
+    fake.res.assign(fake.res.size(), 7);  // must stay untouched
+    fake.write(write_frame(0, Bytes(a.data().begin(), a.data().end())));
+    fake.write(write_frame(32, Bytes(b.data().begin(), b.data().end())));
+    fake.write(Matmul{.a_addr = 0, .b_addr = 32, .c_addr = 64, .m = 4, .k = 8, .n = 4,
+                      .ld_a = 8, .ld_b = 4, .ld_c = 4, .requant = true, .to_input = true,
+                      .shift = 6}
+                   .frame());
+    EXPECT_FALSE(status_of(fake).error);
+
+    const Matrix<std::int64_t> c = matmul_ref(a, b, true, false, 6);
+    for (std::size_t i = 0; i < 16; ++i) {
+        EXPECT_EQ(fake.inp[64 + i], c.data()[i]) << i;
+    }
+    EXPECT_EQ(fake.res, std::vector<std::int64_t>(fake.res.size(), 7));
+}
+
 TEST(FakeTpu, StatusIsBusyForBusyPollsAfterAMatmul) {
     FakeTpu fake(HwConfig{}, /*busy_polls=*/2);
     EXPECT_FALSE(status_of(fake).busy);

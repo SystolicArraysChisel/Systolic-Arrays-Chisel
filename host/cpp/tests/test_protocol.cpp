@@ -82,6 +82,13 @@ TEST(Protocol, MatmulFrameReference) {
     EXPECT_EQ(mm.frame(), expected);
 }
 
+TEST(Protocol, MatmulFrameSetsTheToInputBit) {
+    Matmul mm = dense();
+    mm.requant = true;
+    mm.to_input = true;
+    EXPECT_EQ(mm.frame()[19], 0b101);  // requant and toInput, no relu
+}
+
 // ---- STATUS reply ----
 
 TEST(Protocol, ParseStatus) {
@@ -139,6 +146,45 @@ TEST(MatmulCheck, RejectsBrokenGuarantees) {
     add([](Matmul& mm) { mm.a_addr = 2; }, "aAddr");
     add([](Matmul& mm) { mm.c_addr = 2; }, "cAddr");
     add([](Matmul& mm) { mm.b_addr = 4090; }, "B does not fit");
+
+    for (const Case& c : cases) {
+        SCOPED_TRACE(c.reason);
+        EXPECT_THAT([&c] { c.mm.check(CFG); }, ThrowsMessage<ProtocolError>(HasSubstr(c.reason)));
+    }
+}
+
+// dense() with C written back into the input memory, after B (which ends at 96).
+static Matmul chained() {
+    Matmul mm = dense();
+    mm.c_addr = 96;
+    mm.requant = true;
+    mm.to_input = true;
+    return mm;
+}
+
+TEST(MatmulCheck, AcceptsAWriteBackToTheInputMemory) {
+    EXPECT_NO_THROW(chained().check(CFG));
+    Matmul mm = chained();
+    mm.c_addr = CFG.in_depth - 16;  // the last 4 rows of 4: fits the input memory exactly
+    EXPECT_NO_THROW(mm.check(CFG));
+}
+
+TEST(MatmulCheck, RejectsABrokenWriteBack) {
+    struct Case {
+        Matmul mm;
+        std::string reason;
+    };
+    std::vector<Case> cases;
+    auto add = [&cases](auto change, std::string reason) {
+        Matmul mm = chained();
+        change(mm);
+        cases.push_back({mm, std::move(reason)});
+    };
+    add([](Matmul& mm) { mm.requant = false; }, "toInput needs requant");
+    add([](Matmul& mm) { mm.c_addr = 98; }, "multiples of banks");
+    add([](Matmul& mm) { mm.c_addr = CFG.in_depth - 12; }, "C does not fit in the input memory");
+    add([](Matmul& mm) { mm.c_addr = 28; }, "must not overlap A or B");  // inside A (0..32)
+    add([](Matmul& mm) { mm.c_addr = 80; }, "must not overlap A or B");  // inside B (64..96)
 
     for (const Case& c : cases) {
         SCOPED_TRACE(c.reason);

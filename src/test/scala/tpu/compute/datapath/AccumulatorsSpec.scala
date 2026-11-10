@@ -48,6 +48,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.ctrl.bits.requant.poke(requant.B)
     dut.io.ctrl.bits.shift.poke(shift.U)
     dut.io.ctrl.bits.relu.poke(relu.B)
+    dut.io.ctrl.bits.toInput.poke(false.B)
 
     dut.io.ctrl.valid.poke(true.B)
     dut.io.ctrl.ready.expect(true.B)

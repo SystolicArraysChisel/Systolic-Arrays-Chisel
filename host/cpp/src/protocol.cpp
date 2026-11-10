@@ -60,7 +60,7 @@ Bytes Matmul::frame() const {
     append_le16(frame, ld_a);
     append_le16(frame, ld_b);
     append_le16(frame, ld_c);
-    int flags = (requant << REQUANT_BIT) | (relu << RELU_BIT);
+    int flags = (requant << REQUANT_BIT) | (relu << RELU_BIT) | (to_input << TO_INPUT_BIT);
     frame.push_back(static_cast<std::uint8_t>(flags));
     frame.push_back(static_cast<std::uint8_t>(shift));
     return frame;
@@ -105,9 +105,24 @@ void Matmul::check(const HwConfig& cfg) const {
          "ldA and ldB must be multiples of banks (" + b + ")");
     need(c_addr % cols == 0 && ld_c % cols == 0,
          "cAddr and ldC must be multiples of cols (" + std::to_string(cols) + ")");
-    need(a_addr + (m - 1) * ld_a + k <= cfg.in_depth, "A does not fit in the input memory");
-    need(b_addr + (k - 1) * ld_b + n <= cfg.in_depth, "B does not fit in the input memory");
-    need(c_addr + (m - 1) * ld_c + n <= cfg.out_depth, "C does not fit in the result memory");
+    // One past the last element of each matrix.
+    const int a_end = a_addr + (m - 1) * ld_a + k;
+    const int b_end = b_addr + (k - 1) * ld_b + n;
+    const int c_end = c_addr + (m - 1) * ld_c + n;
+    need(a_end <= cfg.in_depth, "A does not fit in the input memory");
+    need(b_end <= cfg.in_depth, "B does not fit in the input memory");
+    if (to_input) {
+        // C lands in the input memory next to A and B, as int8.
+        auto overlaps = [&](int start, int end) { return c_addr < end && start < c_end; };
+        need(requant, "toInput needs requant (C is stored as int8)");
+        need(c_addr % banks == 0 && ld_c % banks == 0,
+             "with toInput, cAddr and ldC must be multiples of banks (" + b + ")");
+        need(c_end <= cfg.in_depth, "C does not fit in the input memory");
+        need(!overlaps(a_addr, a_end) && !overlaps(b_addr, b_end),
+             "with toInput, C must not overlap A or B");
+    } else {
+        need(c_end <= cfg.out_depth, "C does not fit in the result memory");
+    }
     need(
         0 <= shift && shift < cfg.acc_width,
         "shift = " + std::to_string(shift) + " must be in 0.." + std::to_string(cfg.acc_width - 1));

@@ -48,6 +48,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.ctrl.bits.requant.poke(requant.B)
     dut.io.ctrl.bits.shift.poke(shift.U)
     dut.io.ctrl.bits.relu.poke(relu.B)
+    dut.io.ctrl.bits.toInput.poke(false.B)
 
     dut.io.ctrl.valid.poke(true.B)
     dut.io.ctrl.ready.expect(true.B)
@@ -82,6 +83,9 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut: Accumulators,
       expected: Seq[(Int, Seq[Int])]
   ): Unit = {
+    while (!dut.io.resWr.valid.peekBoolean()) {
+      dut.clock.step()
+    }
     expected.foreach { case (rowAddr, values) =>
       dut.io.resWr.valid.expect(true.B)
       dut.io.done.valid.expect(((rowAddr, values) == expected.last).B)
@@ -139,7 +143,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       // and (cAddr + ldC) / cols = (0 + 2) / 2 = 1. 
       // The tile is requantized with a shift of 1.
       sendControl(
-        dut, first = true, last = true,
+        dut, first = true, last = true, 
         cAddr = 0, ldC = 2, m = 1,
         requant = true, shift = 1
       )
@@ -150,8 +154,249 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       readWrites(dut, Seq(0 -> Seq(127, -127)))
     }
   }
+
+  it should "apply ReLU to negative values without requantization" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 2,
+        relu = true, requant = false
+      )
+      sendRows(dut, Seq(Seq(15, -30), Seq(-10, 45)), last = true)
+      readWrites(dut, Seq(0 -> Seq(15, 0), 1 -> Seq(0, 45)))
+    }
+  }
+
+  it should "apply ReLU with requantization and scaling" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      // shift = 2: rounding is +2 (1 << 1)
+      // 40: (40 + 2) >> 2 = 10 -> ReLU(10) = 10
+      // -40: (-40 + 2) >> 2 = -10 -> ReLU(-10) = 0
+      // -1: (-1 + 2) >> 2 = 0 -> ReLU(0) = 0
+      // 100: (100 + 2) >> 2 = 25 -> ReLU(25) = 25
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 2,
+        requant = true, shift = 2, relu = true
+      )
+      sendRows(dut, Seq(Seq(40, -40), Seq(-1, 100)), last = true)
+      readWrites(dut, Seq(0 -> Seq(10, 0), 1 -> Seq(0, 25)))
+    }
+  }
+
+  it should "round ties toward positive infinity during requantization" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      // shift = 1: rounding is +1 (1 << 0)
+      // 1: (1 + 1) >> 1 = 1 (tie: 0.5 rounds up to 1)
+      // 2: (2 + 1) >> 1 = 1 (1.0 is 1)
+      // -1: (-1 + 1) >> 1 = 0 (tie: -0.5 rounds up to 0)
+      // -2: (-2 + 1) >> 1 = -1 (-1.0 is -1)
+      // -3: (-3 + 1) >> 1 = -1 (tie: -1.5 rounds up to -1)
+      // 3: (3 + 1) >> 1 = 2 (tie: 1.5 rounds up to 2)
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 3,
+        requant = true, shift = 1, relu = false
+      )
+      sendRows(dut, Seq(Seq(1, 2), Seq(-1, -2), Seq(-3, 3)), last = true)
+      readWrites(dut, Seq(0 -> Seq(1, 1), 1 -> Seq(0, -1), 2 -> Seq(-1, 2)))
+    }
+  }
+
+  it should "accumulate three K-tiles before writing" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      // Tile 1: first = true, last = false
+      sendControl(
+        dut, first = true, last = false,
+        cAddr = 0, ldC = 4, m = 2
+      )
+      sendRows(dut, Seq(Seq(1, 2), Seq(3, 4)), last = false)
+
+      // Tile 2: first = false, last = false
+      sendControl(
+        dut, first = false, last = false,
+        cAddr = 0, ldC = 4, m = 2
+      )
+      sendRows(dut, Seq(Seq(10, 20), Seq(30, 40)), last = false)
+
+      // Tile 3: first = false, last = true
+      sendControl(
+        dut, first = false, last = true,
+        cAddr = 0, ldC = 4, m = 2
+      )
+      sendRows(dut, Seq(Seq(100, 200), Seq(300, 400)), last = true)
+
+      // Expected: sum of all 3 tiles (111, 222), (333, 444)
+      readWrites(dut, Seq(0 -> Seq(111, 222), 2 -> Seq(333, 444)))
+    }
+  }
+
+  it should "handle backpressure on the result write interface" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 4
+      )
+      sendRows(dut, Seq(Seq(5, 6), Seq(7, 8), Seq(9, 10), Seq(11, 12)), last = true)
+
+      // Wait until resWr is valid with row 0.
+      while (!dut.io.resWr.valid.peekBoolean()) {
+        dut.clock.step()
+      }
+
+      // Drop ready on the first cycle resWr.valid is high.
+      // With m >= 3, pipeP has row 0, pipeRnd has row 1, pipeR has row 2 (pipeR_valid is true),
+      // and row 2's data is waiting on memRdData.
+      dut.io.resWr.ready.poke(false.B)
+      for (_ <- 0 until 5) {
+        dut.io.resWr.valid.expect(true.B)
+        dut.io.resWr.bits.rowAddr.expect(0.U)
+        dut.io.resWr.bits.data(0).expect(5.S)
+        dut.io.resWr.bits.data(1).expect(6.S)
+        dut.io.done.valid.expect(false.B)
+        dut.clock.step()
+      }
+
+      // Accept row 0.
+      dut.io.resWr.ready.poke(true.B)
+      dut.clock.step()
+
+      // Assert backpressure again for row 1.
+      dut.io.resWr.ready.poke(false.B)
+      for (_ <- 0 until 5) {
+        dut.io.resWr.valid.expect(true.B)
+        dut.io.resWr.bits.rowAddr.expect(1.U)
+        dut.io.resWr.bits.data(0).expect(7.S)
+        dut.io.resWr.bits.data(1).expect(8.S)
+        dut.io.done.valid.expect(false.B)
+        dut.clock.step()
+      }
+
+      // Accept row 1.
+      dut.io.resWr.ready.poke(true.B)
+      dut.clock.step()
+
+      // Assert backpressure for row 2 (which had to survive the memory stall in Stage R).
+      dut.io.resWr.ready.poke(false.B)
+      for (_ <- 0 until 5) {
+        dut.io.resWr.valid.expect(true.B)
+        dut.io.resWr.bits.rowAddr.expect(2.U)
+        dut.io.resWr.bits.data(0).expect(9.S)
+        dut.io.resWr.bits.data(1).expect(10.S)
+        dut.io.done.valid.expect(false.B)
+        dut.clock.step()
+      }
+
+      // Accept row 2.
+      dut.io.resWr.ready.poke(true.B)
+      dut.clock.step()
+
+      // Assert backpressure for row 3 (final row).
+      dut.io.resWr.ready.poke(false.B)
+      for (_ <- 0 until 5) {
+        dut.io.resWr.valid.expect(true.B)
+        dut.io.resWr.bits.rowAddr.expect(3.U)
+        dut.io.resWr.bits.data(0).expect(11.S)
+        dut.io.resWr.bits.data(1).expect(12.S)
+        dut.io.done.valid.expect(false.B)
+        dut.clock.step()
+      }
+
+      // Accept row 3.
+      dut.io.resWr.ready.poke(true.B)
+      dut.io.done.valid.expect(true.B)
+      dut.clock.step()
+
+      dut.io.resWr.valid.expect(false.B)
+    }
+  }
+
+  it should "accumulate and write the maximum number of rows (m = maxM)" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      val maxM = config.maxM
+      val rows = (0 until maxM).map(r => Seq(r * 2 + 1, r * 2 + 2))
+
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 4, m = maxM
+      )
+      sendRows(dut, rows, last = true)
+
+      // Expected row addresses: r * (ldC / cols) = r * (4 / 2) = r * 2.
+      val expected = rows.zipWithIndex.map { case (vals, r) =>
+        (r * 2) -> vals
+      }
+      readWrites(dut, expected)
+    }
+  }
+
+  /** Streams K-tiles of one output tile with no gap between them: the next
+    * tile's ctrl is accepted on the last row of the previous one.
+    */
+  private def sendBackToBack(dut: Accumulators, tiles: Seq[Seq[Seq[Int]]], ldC: Int): Unit = {
+    def pokeCtrl(i: Int): Unit = {
+      dut.io.ctrl.bits.first.poke((i == 0).B)
+      dut.io.ctrl.bits.last.poke((i == tiles.length - 1).B)
+      dut.io.ctrl.bits.cAddr.poke(0.U)
+      dut.io.ctrl.bits.ldC.poke(ldC.U)
+      dut.io.ctrl.bits.m.poke(tiles(i).length.U)
+      dut.io.ctrl.bits.requant.poke(false.B)
+      dut.io.ctrl.bits.shift.poke(0.U)
+      dut.io.ctrl.bits.relu.poke(false.B)
+      dut.io.ctrl.bits.toInput.poke(false.B)
+      dut.io.ctrl.valid.poke(true.B)
+    }
+    pokeCtrl(0)
+    dut.io.ctrl.ready.expect(true.B)
+    dut.clock.step()
+    dut.io.ctrl.valid.poke(false.B)
+
+    for ((tile, i) <- tiles.zipWithIndex; (row, r) <- tile.zipWithIndex) {
+      row.zipWithIndex.foreach { case (v, col) => dut.io.in.bits(col).poke(v.S) }
+      dut.io.in.valid.poke(true.B)
+      val lastRow = r == tile.length - 1
+      if (lastRow && i < tiles.length - 1) {
+        pokeCtrl(i + 1)
+        dut.io.ctrl.ready.expect(true.B)
+      } else {
+        dut.io.ctrl.valid.poke(false.B)
+        dut.io.ctrl.ready.expect(false.B)
+      }
+      dut.io.done.valid.expect((lastRow && i < tiles.length - 1).B)
+      dut.clock.step()
+    }
+    dut.io.in.valid.poke(false.B)
+    dut.io.ctrl.valid.poke(false.B)
+  }
+
+  it should "accumulate K-tiles that arrive back to back" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+      sendBackToBack(dut, Seq(Seq(Seq(1, 2), Seq(3, 4)), Seq(Seq(10, 20), Seq(-3, 6)), Seq(Seq(5, 5), Seq(1, 1))), ldC = 4)
+      readWrites(dut, Seq(0 -> Seq(16, 27), 2 -> Seq(1, 11)))
+    }
+  }
+
+  // shortcut: the simulator reads new data on a same-cycle read and write, so
+  // this passes even without the m = 1 forwarding; only the hardware needs it.
+  it should "accumulate back-to-back tiles that have a single row" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+      sendBackToBack(dut, Seq(Seq(Seq(1, -2)), Seq(Seq(10, 20)), Seq(Seq(100, 200))), ldC = 2)
+      readWrites(dut, Seq(0 -> Seq(111, 218)))
+    }
+  }
 }
 
-/**
-  * TODO: More tests.
-  */

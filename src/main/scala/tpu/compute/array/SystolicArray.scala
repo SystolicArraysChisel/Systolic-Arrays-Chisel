@@ -20,8 +20,10 @@ class SystolicArray(c: SAConfig) extends Module {
 
   grid.io.wIn := io.wIn
 
-  for (i <- 0 until c.rows)
+  for (i <- 0 until c.rows) {
     grid.io.aIn(i) := ShiftRegister(io.aIn.bits(i), i)
+    grid.io.swap(i) := ShiftRegister(io.aIn.valid && io.aFirst, i, false.B, true.B)
+  }
 
   for (j <- 0 until c.cols)
     io.out.bits(j) := ShiftRegister(grid.io.psumOut(j), c.cols - 1 - j)

@@ -7,7 +7,7 @@ class AccCtrl(c: SAConfig) extends Bundle {
   val first = Bool()
   val last = Bool()
 
-  val cAddr = UInt(c.outAddrW.W)
+  val cAddr = UInt(c.resAddrW.W)
   val ldC = UInt(c.dimW.W)
   val m = UInt(c.dimW.W)
 
@@ -15,4 +15,6 @@ class AccCtrl(c: SAConfig) extends Bundle {
 
   val requant = Bool()
   val shift = UInt(c.shiftW.W)
+
+  val toInput = Bool() // write the finished rows into the input memory
 }

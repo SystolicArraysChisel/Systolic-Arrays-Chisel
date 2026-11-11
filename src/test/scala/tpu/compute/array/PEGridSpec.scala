@@ -36,6 +36,7 @@ class PEGridSpec extends AnyFlatSpec with ChiselScalatestTester {
       for (i <- 0 until c.rows) {
         val v = a.lift(t - i).map(_(i)).getOrElse(0)
         dut.io.aIn(i).poke(v.S)
+        dut.io.swap(i).poke((t == i).B)
       }
       for (j <- 0 until c.cols) {
         val m = t - c.rows - j

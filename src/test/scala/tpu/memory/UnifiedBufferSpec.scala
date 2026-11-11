@@ -28,6 +28,8 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
 
     dut.io.mvRdReq.valid.poke(false.B)
     dut.io.mvRdResp.ready.poke(true.B) // DataMover always accepts a row read.
+    dut.io.mvWRdReq.valid.poke(false.B)
+    dut.io.mvWRdResp.ready.poke(true.B)
 
     dut.io.resWr.valid.poke(false.B)
   }
@@ -78,6 +80,7 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
       data: Seq[Int]
   ): Unit = {
     dut.io.resWr.bits.rowAddr.poke(rowAddr.U)
+    dut.io.resWr.bits.toInput.poke(false.B)
     data.zipWithIndex.foreach { case (value, col) =>
       dut.io.resWr.bits.data(col).poke(value.S)
     }
@@ -251,19 +254,269 @@ class UnifiedBufferSpec extends AnyFlatSpec with ChiselScalatestTester {
       }
     }
   }
-}
 
-/**
-	* TODO: Add tests, including:
-	* - Burst reading of mvRdReq. This is the real use of the DataMover: 
-	*   one row per loop.
-	* - Reset with an in-flight read (cycle 1, rdFireD = 1). My reset test 
-	* 	only covers the case respValid = 1. Here I should check that a read 
-	* 	that has already started does not produce a response after the reset.
-	* - Request submitted during backpressure. In test 3, I only check that 
-	* 	hostRdReq.ready is low. Also check that a request with a high valid 
-	* 	(to another address) is not accepted and does not alter the data.
-	* - Wider addresses. Now only use lines 0-3. Add at least the last valid 
-	* 	address (inDepth = 1 and outDepth = 1) to match the widths of fields 
-	* 	with inDepth = 64 and a larger depth, such as 256.
-	*/
+  it should "burst read input rows with consecutive requests" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+
+        val numRows = 4
+        val rowData = (0 until numRows).map { r =>
+          (0 until c.banks).map(b => r * 10 + b + 1)
+        }
+
+        for (r <- 0 until numRows) {
+          for (b <- 0 until c.banks) {
+            writeInput(dut, c, b + (r << c.bankBits), rowData(r)(b))
+          }
+        }
+
+        // Request row 0.
+        dut.io.mvRdReq.bits.rowAddr.poke(0.U)
+        dut.io.mvRdReq.valid.poke(true.B)
+        dut.io.mvRdReq.ready.expect(true.B)
+        dut.clock.step()
+
+        // Request next row while reading previous response.
+        for (r <- 1 until numRows) {
+          dut.io.mvRdReq.bits.rowAddr.poke(r.U)
+          dut.io.mvRdReq.valid.poke(true.B)
+          dut.io.mvRdResp.valid.expect(true.B)
+          for (b <- 0 until c.banks) {
+            dut.io.mvRdResp.bits(b).expect(rowData(r - 1)(b).S)
+          }
+          dut.clock.step()
+        }
+
+        // Deassert request, read the last row response.
+        dut.io.mvRdReq.valid.poke(false.B)
+        dut.io.mvRdResp.valid.expect(true.B)
+        for (b <- 0 until c.banks) {
+          dut.io.mvRdResp.bits(b).expect(rowData(numRows - 1)(b).S)
+        }
+        dut.clock.step()
+        dut.io.mvRdResp.valid.expect(false.B)
+      }
+    }
+  }
+
+  it should "reject new host read requests while previous response is held by backpressure" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+
+        val valA = 42
+        val valB = 99
+        writeResultRow(dut, c, rowAddr = 0, Seq.fill(c.cols)(valA))
+        writeResultRow(dut, c, rowAddr = 1, Seq.fill(c.cols)(valB))
+
+        // Request address 0.
+        dut.io.hostRdReq.bits.addr.poke(0.U)
+        dut.io.hostRdReq.valid.poke(true.B)
+        dut.io.hostRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.hostRdReq.valid.poke(false.B)
+
+        // Wait until response is valid.
+        dut.clock.step()
+        dut.io.hostRdResp.valid.expect(true.B)
+        dut.io.hostRdResp.bits.expect(valA.S)
+
+        // Backpressure response.
+        dut.io.hostRdResp.ready.poke(false.B)
+
+        // Now attempt a new read request to address row 1.
+        dut.io.hostRdReq.bits.addr.poke((1 << c.colBits).U)
+        dut.io.hostRdReq.valid.poke(true.B)
+
+        // It must not be accepted while response is pending.
+        dut.io.hostRdReq.ready.expect(false.B)
+        for (_ <- 0 until 5) {
+          dut.clock.step()
+          dut.io.hostRdReq.ready.expect(false.B)
+          dut.io.hostRdResp.valid.expect(true.B)
+          dut.io.hostRdResp.bits.expect(valA.S)
+        }
+
+        // Deassert request valid, then accept the held response.
+        dut.io.hostRdReq.valid.poke(false.B)
+        dut.io.hostRdResp.ready.poke(true.B)
+        dut.clock.step()
+
+        // Response should be cleared and ready should become true.
+        dut.io.hostRdResp.valid.expect(false.B)
+        dut.io.hostRdReq.ready.expect(true.B)
+
+        // Now address 1 can be read.
+        requestHostRead(dut, c, 1 << c.colBits)
+        dut.io.hostRdResp.valid.expect(true.B)
+        dut.io.hostRdResp.bits.expect(valB.S)
+      }
+    }
+  }
+
+  it should "abort an in-flight host read on reset before response is valid" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+
+        writeResultRow(dut, c, rowAddr = 0, Seq.fill(c.cols)(88))
+
+        // Cycle 0: request.
+        dut.io.hostRdReq.bits.addr.poke(0.U)
+        dut.io.hostRdReq.valid.poke(true.B)
+        dut.io.hostRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.hostRdReq.valid.poke(false.B)
+
+        // Cycle 1: request is in-flight in memory, assert reset.
+        dut.reset.poke(true.B)
+        dut.clock.step()
+        dut.reset.poke(false.B)
+
+        // Cycle 2: no response should appear and buffer is ready.
+        dut.io.hostRdResp.valid.expect(false.B)
+        dut.io.hostRdReq.ready.expect(true.B)
+
+        dut.clock.step()
+        dut.io.hostRdResp.valid.expect(false.B)
+        dut.io.hostRdReq.ready.expect(true.B)
+      }
+    }
+  }
+
+  it should "write and read at maximum boundary addresses of input and result memory" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+
+        val maxInRow = (c.inDepth / c.banks) - 1
+        val inExpected = (0 until c.banks).map(b => b + 10)
+        (0 until c.banks).foreach { b =>
+          writeInput(dut, c, b + (maxInRow << c.bankBits), inExpected(b))
+        }
+        val inActual = readInputRow(dut, c, maxInRow)
+        assert(inActual == inExpected)
+
+        val maxOutRow = (c.outDepth / c.cols) - 1
+        val outExpected = (0 until c.cols).map(col => col + 50)
+        writeResultRow(dut, c, maxOutRow, outExpected)
+
+        (0 until c.cols).foreach { col =>
+          requestHostRead(dut, c, col + (maxOutRow << c.colBits))
+          dut.io.hostRdResp.valid.expect(true.B)
+          dut.io.hostRdResp.bits.expect(outExpected(col).S)
+          dut.io.hostRdResp.ready.poke(true.B)
+          dut.clock.step()
+        }
+      }
+    }
+  }
+
+  it should "write a result row back into the input memory (toInput), ahead of a host write" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+
+        val row = 5
+        // Requantized values, one per bank; negative ones check the sign survives truncation.
+        val values = (0 until c.cols).map(col => if (col % 2 == 0) -100 + col else 50 + col)
+
+        // The result memory already holds a row at that address: it must not change.
+        writeResultRow(dut, c, row, Seq.fill(c.cols)(7))
+
+        // A host write to another row is offered in the same cycle.
+        val hostAddr = 1 << c.bankBits // row 1, bank 0
+        dut.io.hostWr.bits.addr.poke(hostAddr.U)
+        dut.io.hostWr.bits.data.poke(42.S)
+        dut.io.hostWr.valid.poke(true.B)
+
+        dut.io.resWr.bits.rowAddr.poke(row.U)
+        dut.io.resWr.bits.toInput.poke(true.B)
+        values.zipWithIndex.foreach { case (v, col) => dut.io.resWr.bits.data(col).poke(v.S) }
+        dut.io.resWr.valid.poke(true.B)
+
+        // The written-back row takes every bank: the host write must wait.
+        dut.io.resWr.ready.expect(true.B)
+        dut.io.hostWr.ready.expect(false.B)
+        dut.clock.step()
+        dut.io.resWr.valid.poke(false.B)
+
+        // Next cycle the host write goes through.
+        dut.io.hostWr.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.hostWr.valid.poke(false.B)
+
+        assert(readInputRow(dut, c, row) == values)
+        assert(readInputRow(dut, c, 1).head == 42)
+
+        // The result memory row is untouched.
+        requestHostRead(dut, c, row << c.colBits)
+        dut.io.hostRdResp.valid.expect(true.B)
+        dut.io.hostRdResp.bits.expect(7.S)
+      }
+    }
+  }
+
+  it should "read an activation row and a weight row in the same cycle" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+        for (r <- 0 until 2; b <- 0 until c.banks)
+          writeInput(dut, c, b + (r << c.bankBits), r * 10 + b + 1)
+
+        dut.io.mvRdReq.bits.rowAddr.poke(0.U)
+        dut.io.mvRdReq.valid.poke(true.B)
+        dut.io.mvWRdReq.bits.rowAddr.poke(1.U)
+        dut.io.mvWRdReq.valid.poke(true.B)
+        dut.io.mvRdReq.ready.expect(true.B)
+        dut.io.mvWRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.mvRdReq.valid.poke(false.B)
+        dut.io.mvWRdReq.valid.poke(false.B)
+
+        dut.io.mvRdResp.valid.expect(true.B)
+        dut.io.mvWRdResp.valid.expect(true.B)
+        for (b <- 0 until c.banks) {
+          dut.io.mvRdResp.bits(b).expect((b + 1).S)
+          dut.io.mvWRdResp.bits(b).expect((10 + b + 1).S)
+        }
+      }
+    }
+  }
+
+  it should "stall activation reads, but not weight reads, during a host write" in {
+    configs.foreach { c =>
+      test(new UnifiedBuffer(c)) { dut =>
+        clearInputs(dut)
+        for (b <- 0 until c.banks) writeInput(dut, c, b, b + 1)
+
+        // Host write to row 1 in the same cycle as both row reads of row 0.
+        dut.io.hostWr.bits.addr.poke((1 << c.bankBits).U)
+        dut.io.hostWr.bits.data.poke(-7.S)
+        dut.io.hostWr.valid.poke(true.B)
+        dut.io.mvRdReq.bits.rowAddr.poke(0.U)
+        dut.io.mvRdReq.valid.poke(true.B)
+        dut.io.mvWRdReq.bits.rowAddr.poke(0.U)
+        dut.io.mvWRdReq.valid.poke(true.B)
+        dut.io.hostWr.ready.expect(true.B)
+        dut.io.mvRdReq.ready.expect(false.B)
+        dut.io.mvWRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.hostWr.valid.poke(false.B)
+        dut.io.mvWRdReq.valid.poke(false.B)
+
+        // The weight row came back; the activation read is accepted now.
+        dut.io.mvWRdResp.valid.expect(true.B)
+        dut.io.mvRdResp.valid.expect(false.B)
+        dut.io.mvRdReq.ready.expect(true.B)
+        dut.clock.step()
+        dut.io.mvRdReq.valid.poke(false.B)
+        dut.io.mvRdResp.valid.expect(true.B)
+        for (b <- 0 until c.banks) dut.io.mvRdResp.bits(b).expect((b + 1).S)
+
+        assert(readInputRow(dut, c, 1).head == -7)
+      }
+    }
+  }
+}

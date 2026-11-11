@@ -47,8 +47,12 @@ class TpuCore(c: SAConfig, b: BoardConfig) extends Module {
   mover.io.cmd <> seq.io.tileCmd
   buf.io.mvRdReq <> mover.io.rdReq
   mover.io.rdResp <> buf.io.mvRdResp
+  buf.io.mvWRdReq <> mover.io.wRdReq
+  mover.io.wRdResp <> buf.io.mvWRdResp
+  mover.io.accFree := seq.io.accFree
   array.io.wIn := mover.io.wOut
   array.io.aIn := mover.io.aOut
+  array.io.aFirst := mover.io.aFirst
   acc.io.in := array.io.out
   acc.io.ctrl <> seq.io.accCtrl
   seq.io.tileDone := acc.io.done

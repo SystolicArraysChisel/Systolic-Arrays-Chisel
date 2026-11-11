@@ -53,6 +53,15 @@ case class SAConfig(
   ) // Bits of an element address in the result memory.
   val outRowAddrW: Int = outAddrW - colBits; // Bits of a row address inside the result memory.
 
+  /* Bits of a C address. C goes to the result memory, or back to the input
+   * memory when a MATMUL writes back (toInput), so a C address must reach both. */
+  val resAddrW: Int = addrW max outAddrW
+  val resRowAddrW: Int = resAddrW - colBits // Bits of a row address of C, in either memory.
+
+  /* Largest requantized value: results saturate to [-inMax, inMax] so that
+   * they fit in an input element and can be written back as the next A. */
+  val inMax: BigInt = (BigInt(1) << (inWidth - 1)) - 1
+
   val shiftW: Int = log2Ceil(accWidth) // Bits of the requantization shift
   val dimW: Int =
     16; // width, in bits, of the hardware registers and wires that hold matrix sizes
@@ -60,8 +69,8 @@ case class SAConfig(
     rows + cols - 1; /* Cycles between row m of aIn entering the array and row m of out leaving it, after skew and de-skew */
   /** Minimum number of empty cycles between the last weight beat (wIn) and the
     * first activation (aIn): the first aIn may be valid weightToActGap + 1
-    * cycles after the last wIn beat. Depends on Andreea's PE design: TO
-    * CONFIRM. 0 for now.
+    * cycles after the last wIn beat. 0: the double-buffered PE swaps weights
+    * on the same cycle as the first activation (see SystolicArrayIO.aFirst).
     */
   val weightToActGap: Int = 0 // Number of empty cycles between the final wIn and first aIn beat.
   // WARNING: Comes from Andreea’s schedule function may be subject to change

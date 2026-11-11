@@ -51,4 +51,48 @@ class SystolicArraySpec extends AnyFlatSpec with ChiselScalatestTester {
       assert(runTile(dut, c, b, a) == expected(c, b, a))
     }
   }
+
+  it should "load the next tile while computing and run both tiles without a gap" in {
+    val c = cfg(4)
+    val rnd = new scala.util.Random(7)
+    def int8() = rnd.nextInt(256) - 128
+    val b0 = Seq.fill(4, 4)(int8())
+    val b1 = Seq.fill(4, 4)(int8())
+    // Tightest schedule: b1 shifts in at [arrayLatency, arrayLatency + rows - 1],
+    // and tile 1 starts the cycle right after.
+    val m0 = c.arrayLatency + c.rows
+    val a0 = Seq.fill(m0, 4)(int8())
+    val a1 = Seq.fill(5, 4)(int8())
+    val load = c.arrayLatency until c.arrayLatency + c.rows
+    val aRows = a0 ++ a1
+
+    test(new SystolicArray(c)) { dut =>
+      dut.io.aIn.valid.poke(false.B)
+      dut.io.aFirst.poke(false.B)
+      for (r <- b0.indices.reverse) {
+        dut.io.wIn.valid.poke(true.B)
+        b0(r).zipWithIndex.foreach { case (v, j) => dut.io.wIn.bits(j).poke(v.S) }
+        dut.clock.step()
+      }
+
+      val seen = scala.collection.mutable.ArrayBuffer[(Int, Seq[BigInt])]()
+      for (t <- 0 until aRows.length + c.arrayLatency + 1) {
+        val w = load.indexOf(t)
+        dut.io.wIn.valid.poke((w >= 0).B)
+        if (w >= 0)
+          b1(c.rows - 1 - w).zipWithIndex.foreach { case (v, j) => dut.io.wIn.bits(j).poke(v.S) }
+        dut.io.aIn.valid.poke((t < aRows.length).B)
+        dut.io.aFirst.poke((t == 0 || t == m0).B)
+        aRows.lift(t).foreach(_.zipWithIndex.foreach { case (v, i) => dut.io.aIn.bits(i).poke(v.S) })
+        if (dut.io.out.valid.peek().litToBoolean)
+          seen += ((t, dut.io.out.bits.map(_.peek().litValue)))
+        dut.clock.step()
+      }
+
+      val want = (matmul(a0, b0) ++ matmul(a1, b1)).zipWithIndex.map { case (r, t) =>
+        (t + c.arrayLatency, r)
+      }
+      assert(seen.toSeq == want)
+    }
+  }
 }

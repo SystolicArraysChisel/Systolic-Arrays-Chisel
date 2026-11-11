@@ -134,6 +134,34 @@ TEST(TpuDriver, RunPollsStatusUntilNotBusy) {
     EXPECT_EQ(perf.busy_pe_cycles, 64u);
 }
 
+TEST(TpuDriver, ChainsTwoLayersWithoutReadingTheHiddenLayer) {
+    // Y = requant(relu(requant(X . W1)) . W2): 8 -> 12 -> 4, batch of 6. H stays on the TPU.
+    auto [fake, tpu] = make(/*busy_polls=*/1);
+    std::mt19937 rng(6);
+    const Matrix<std::int8_t> x = random_int8(rng, 6, 8);
+    const Matrix<std::int8_t> w1 = random_int8(rng, 8, 12);
+    const Matrix<std::int8_t> w2 = random_int8(rng, 12, 4);
+    const int x_addr = 0, w1_addr = 48, w2_addr = 144, h_addr = 192;
+
+    tpu.write(x_addr, x.data());
+    tpu.write(w1_addr, w1.data());
+    tpu.write(w2_addr, w2.data());
+    tpu.run(Matmul{.a_addr = x_addr, .b_addr = w1_addr, .c_addr = h_addr, .m = 6, .k = 8,
+                   .n = 12, .ld_a = 8, .ld_b = 12, .ld_c = 12, .requant = true, .relu = true,
+                   .to_input = true, .shift = 10});
+    tpu.run(Matmul{.a_addr = h_addr, .b_addr = w2_addr, .c_addr = 0, .m = 6, .k = 12, .n = 4,
+                   .ld_a = 12, .ld_b = 4, .ld_c = 4, .requant = true, .shift = 10});
+    const std::vector<std::int64_t> y = tpu.read(0, 24, 1);
+
+    Matrix<std::int8_t> h(6, 12);
+    const Matrix<std::int64_t> h_wide = matmul_ref(x, w1, true, true, 10);
+    std::transform(h_wide.begin(), h_wide.end(), h.begin(),
+                   [](std::int64_t v) { return static_cast<std::int8_t>(v); });
+    EXPECT_EQ(y, matmul_ref(h, w2, true, false, 10).data());
+    // Only one READ: the hidden layer never came back to the host.
+    EXPECT_EQ(std::count(fake->ops.begin(), fake->ops.end(), Op::Read), 1);
+}
+
 TEST(TpuDriver, RefusesOutsideTheMemory) {
     auto [fake, tpu] = make();
     const std::vector<std::int8_t> two{1, 2};

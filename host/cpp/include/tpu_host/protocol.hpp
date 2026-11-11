@@ -20,6 +20,7 @@ inline constexpr int MAX_FIELD =
 inline constexpr std::size_t MATMUL_FRAME_BYTES = 21;  // opcode + 20 payload bytes
 inline constexpr int REQUANT_BIT = 0;                  // bit positions in the MATMUL flags byte
 inline constexpr int RELU_BIT = 1;
+inline constexpr int TO_INPUT_BIT = 2;  // write C back into the input memory
 
 inline constexpr std::size_t STATUS_REPLY_BYTES = 9;
 inline constexpr int BUSY_BIT = 0;  // bit positions in the STATUS flags byte
@@ -50,6 +51,10 @@ struct Matmul {
     Dim ld_c = 0;
     bool requant = false;
     bool relu = false;
+    // Write C (requantized, int8) into the input memory at c_addr instead of the
+    // result memory, so the next MATMUL can use it as A without going through
+    // the host. Needs requant.
+    bool to_input = false;
     int shift = 0;
 
     Bytes frame() const;

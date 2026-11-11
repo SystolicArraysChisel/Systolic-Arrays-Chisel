@@ -7,7 +7,7 @@ import scala.collection.mutable
 import scala.util.Random
 
 import ifaces.SAConfig
-import tpu.io.{BoardConfig, HostFrames}
+import tpu.io.{BoardConfig, HostFrames, HostProtocol}
 import tpu.io.UartTestUtil.frameBits
 import tpu.ref.RefModel
 import tpu.ref.RefModel.Mat
@@ -221,6 +221,48 @@ class TpuSpec extends AnyFlatSpec with ChiselScalatestTester {
       check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 4), requant = true,
         relu = true, shift = 7)
       check(host, RefModel.randomMatrix(rnd, 3, 4), RefModel.randomMatrix(rnd, 4, 4))
+    }
+  }
+
+  it should "chain two layers on chip: the hidden layer is written back as the next A (toInput)" in {
+    withCore { host =>
+      val rnd = new Random(6)
+      // Y = requant(relu(requant(X . W1)) . W2): a 2-layer MLP, 8 -> 12 -> 4, batch of 6
+      val (m, nIn, nHid, nOut) = (6, 8, 12, 4)
+      val (shift1, shift2) = (10, 10)
+      val x = RefModel.randomMatrix(rnd, m, nIn)
+      val w1 = RefModel.randomMatrix(rnd, nIn, nHid)
+      val w2 = RefModel.randomMatrix(rnd, nHid, nOut)
+
+      // Input-memory layout, every base a multiple of banks (dims are multiples of 4: no padding)
+      val xAddr = 0
+      val w1Addr = xAddr + m * nIn
+      val w2Addr = w1Addr + nIn * nHid
+      val hAddr = w2Addr + nHid * nOut // H never leaves the chip
+      Seq(xAddr, w1Addr, w2Addr, hAddr).foreach(a => assert(a % c.banks == 0))
+
+      // One upload...
+      host.write(xAddr, x.flatten)
+      host.write(w1Addr, w1.flatten)
+      host.write(w2Addr, w2.flatten)
+
+      // ...two MATMULs sent back to back (the decoder holds the second until the first is done)...
+      val requant = 1 << HostProtocol.Matmul.RequantBit
+      val relu = 1 << HostProtocol.Matmul.ReluBit
+      val toInput = 1 << HostProtocol.Matmul.ToInputBit
+      host.send(HostFrames.Matmul(xAddr, w1Addr, hAddr, m, nIn, nHid, nIn, nHid, nHid,
+        requant | relu | toInput, shift1).bytes)
+      host.send(HostFrames.Matmul(hAddr, w2Addr, 0, m, nHid, nOut, nHid, nOut, nOut,
+        requant, shift2).bytes)
+      var st = host.status()
+      while (st.busy) st = host.status()
+      assert(!st.error && !st.overrun, s"STATUS after the second MATMUL: $st")
+
+      // ...one read.
+      val y = host.read(0, m * nOut, 1).grouped(nOut).toSeq
+      val h = RefModel.matmul(x, w1, requant = true, relu = true, shift = shift1)
+      val want = RefModel.matmul(h, w2, requant = true, shift = shift2)
+      assert(y == want)
     }
   }
 

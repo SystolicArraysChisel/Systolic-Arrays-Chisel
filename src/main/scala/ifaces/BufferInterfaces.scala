@@ -13,10 +13,13 @@ class BufRowReq(c: SAConfig) extends Bundle {
 
 /**
   * Writes one finished row of C (one value per
-  * PE column) into the result memory in a
-  * single cycle.
+  * PE column) in a single cycle: into the result
+  * memory, or into the input memory if toInput
+  * (then only the low inWidth bits of each value
+  * are kept, one value per bank).
   */
 class BufResultWrite(c: SAConfig) extends Bundle {
-  val rowAddr = UInt(c.outRowAddrW.W)
+  val rowAddr = UInt(c.resRowAddrW.W)
   val data = Vec(c.cols, c.accT)
+  val toInput = Bool()
 }

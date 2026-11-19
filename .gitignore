@@ -26,6 +26,10 @@ test_run_dir/
 *.str
 vivado*.backup.*
 
+# --- C++ host ---
+host/cpp/.cache/
+host/cpp/.clangd
+
 # --- Python host ---
 __pycache__/
 *.pyc

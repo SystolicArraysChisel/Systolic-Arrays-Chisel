@@ -146,7 +146,7 @@ class UartRxSpec extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  it should "receive a byte at the real board's 115200 baud" in {
+  it should "receive a byte at the real board's 2 Mbaud" in {
     val b = BoardConfig.nexys
     withRx(b) { (dut, m) =>
       sendFrame(dut.io.rxd, dut.clock, 0xa7, b.cyclesPerBit)(m.sample())

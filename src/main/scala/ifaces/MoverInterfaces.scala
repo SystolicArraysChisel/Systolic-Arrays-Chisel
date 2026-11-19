@@ -18,4 +18,9 @@ class TileCmd(c: SAConfig) extends Bundle {
 	val ldA = UInt(c.dimW.W)
 	val ldB = UInt(c.dimW.W)
 	val m = UInt(c.dimW.W)
+
+	/** First K-tile of a new N-tile: its activations must wait for accFree
+	  * (the accumulators finished writing back the previous output tile).
+	  * Its weights may still load early. */
+	val waitAcc = Bool()
 }

@@ -38,16 +38,24 @@ object HostProtocol {
     * 0       opcode   0x03
     * 1–2     aAddr    input-memory address of A[0][0]
     * 3–4     bAddr    input-memory address of B[0][0]
-    * 5–6     cAddr    result-memory address where C[0][0] is written
+    * 5–6     cAddr    address where C[0][0] is written: result memory, or input memory if toInput
     * 7–8     m        rows of A and of C; must be <= maxM
     * 9–10    k        columns of A = rows of B; padded to a multiple of banks
     * 11–12   n        columns of B and of C; padded to a multiple of banks
     * 13–14   ldA      distance between two rows of A in the input memory (= k if A is dense)
     * 15–16   ldB      distance between two rows of B in the input memory (= n if B is dense)
     * 17–18   ldC      distance between two rows of C in the result memory (= n if C is dense)
-    * 19      flags    bit 0 = requant, bit 1 = relu, bits 2–7 = 0
+    * 19      flags    bit 0 = requant, bit 1 = relu, bit 2 = toInput, bits 3–7 = 0
     * 20      shift    right shift for requantization (0 to accWidth - 1); ignored if requant = 0
     * }}}
+    *
+    * toInput writes C back into the input memory instead of the result memory,
+    * so that it can be the A of the next MATMUL (a layer's output feeding the
+    * next layer) without a round trip through the host. Each element keeps its
+    * low inWidth bits, so toInput needs requant = 1 (results then saturate to
+    * [-inMax, inMax]). cAddr and ldC are then input-memory values and must be
+    * multiples of banks, like aAddr and ldA. C must not overlap the A or B of
+    * the same MATMUL.
     *
     * Matrices are row-major: element (i, j) is at base + i * ld + j. The host
     * guarantees: ldA >= k, ldB >= n, ldC >= n; aAddr, bAddr, ldA, ldB are
@@ -76,6 +84,8 @@ object HostProtocol {
     // bit positions inside the flags byte
     val RequantBit = 0
     val ReluBit = 1
+    val ToInputBit = 2
+    val usedFlagBits = 3 // bits ToInputBit + 1 to 7 must be 0
   }
 
   /** STATUS: ask whether the accelerator is busy and how long the last MATMUL

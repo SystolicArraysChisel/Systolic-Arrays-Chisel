@@ -11,10 +11,12 @@ import chisel3.util._
 class SystolicArrayIO(c: SAConfig) extends Bundle {
 
   /** Weights in, at the top of the array. Each cycle with valid = 1 carries one
-    * row of the B tile (cols numbers, one per PE column) and pushes the weights
-    * already loaded down by one PE row. The data mover sends the rows last row
-    * first, so that after `rows` valid cycles PE row r holds row r of the tile.
-    * While valid = 0, the weights stay where they are.
+    * row of the B tile (cols numbers, one per PE column) and pushes the shadow
+    * weights already loaded down by one PE row. The data mover sends the rows
+    * last row first, so that after `rows` valid cycles PE row r holds row r of
+    * the tile in its shadow register. While valid = 0, they stay where they are.
+    * The PEs compute with a separate active weight, so the next tile may load
+    * while the current one computes; see aFirst for the allowed window.
     */
   val wIn = Flipped(Valid(Vec(c.cols, c.inT)))
 
@@ -25,6 +27,15 @@ class SystolicArrayIO(c: SAConfig) extends Bundle {
     * first row may arrive weightToActGap + 1 cycles after the last weight row.
     */
   val aIn = Flipped(Valid(Vec(c.rows, c.inT)))
+
+  /** Set together with the first aIn row of every tile (ignored while aIn.valid
+    * = 0). It makes the shadow weights active, starting with that row. With t0
+    * the cycle of that row, the next tile's wIn beats must all fall within
+    * [t0 + arrayLatency, t1 - 1], where t1 is the next tile's first aIn row:
+    * the swap must have left the array before the shadows shift again, and
+    * the shadows must be full before the next swap.
+    */
+  val aFirst = Input(Bool())
 
   /** Results out, at the bottom of the array. Each cycle with valid = 1 carries
     * one row of partial sums (cols numbers, one per PE column), exactly

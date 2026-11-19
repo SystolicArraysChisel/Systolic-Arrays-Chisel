@@ -2,7 +2,7 @@ package tpu.ref
 
 import scala.util.Random
 
-/** Bit-exact model of one MATMUL.
+/** Bit-exact model of one MATMUL, the Scala copy of host/tpu_host/reference.py.
   *
   * C = A . B on int8 inputs with an accWidth-bit accumulator, then the
   * post-processing of the spec: optional requantization, then optional ReLU.

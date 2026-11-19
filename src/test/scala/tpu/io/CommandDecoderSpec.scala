@@ -98,7 +98,7 @@ class CommandDecoderSpec extends AnyFlatSpec with ChiselScalatestTester {
       "unknown opcode" -> Seq(0x99),
       "READ size 2" -> read(0, 3, 2),
       "MATMUL shift 32" -> Matmul(shift = 32).bytes,
-      "MATMUL flag bit 2" -> Matmul(flags = 0x04).bytes
+      "MATMUL flag bit 3" -> Matmul(flags = 0x08).bytes
     )
     for ((name, frame) <- invalid) withBench() { (dut, t) =>
       dut.io.error.expect(false.B)

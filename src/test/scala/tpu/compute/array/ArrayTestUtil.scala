@@ -33,15 +33,18 @@ object ArrayTestUtil {
     dut.io.wIn.valid.poke(false.B)
 
     val seen = ArrayBuffer[(Int, Seq[BigInt])]()
+    val first = aRows.indexWhere(_.isDefined)
     for (t <- 0 until aRows.length + c.arrayLatency + 1) {
       val row = aRows.lift(t).flatten
       dut.io.aIn.valid.poke(row.isDefined.B)
+      dut.io.aFirst.poke((t == first).B)
       row.foreach(_.zipWithIndex.foreach { case (v, i) => dut.io.aIn.bits(i).poke(v.S) })
       if (dut.io.out.valid.peek().litToBoolean)
         seen += ((t, dut.io.out.bits.map(_.peek().litValue)))
       dut.clock.step()
     }
     dut.io.aIn.valid.poke(false.B)
+    dut.io.aFirst.poke(false.B)
     seen.toSeq
   }
 

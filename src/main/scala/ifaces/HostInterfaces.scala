@@ -46,8 +46,8 @@ class Instruction(c: SAConfig) extends Bundle {
   val aAddr = UInt(c.addrW.W) // Input-memory address of A[0][0]
   val bAddr = UInt(c.addrW.W) // Input-memory address of B[0][0]
   val cAddr = UInt(
-    c.outAddrW.W
-  ) // Result-memory address where C[0][0] is written
+    c.resAddrW.W
+  ) // Address where C[0][0] is written: in the result memory, or in the input memory if toInput
 
   val m = UInt(c.dimW.W) // Rows of A and C (at most maxM)
   val k = UInt(
@@ -64,6 +64,8 @@ class Instruction(c: SAConfig) extends Bundle {
   val requant = Bool() // Requantize results to int8 before writing them
 
   val relu = Bool() // Apply ReLU after requantization.
+
+  val toInput = Bool() // Write C into the input memory (as the next A) instead of the result memory; needs requant
 
   val shift = UInt(
     c.shiftW.W

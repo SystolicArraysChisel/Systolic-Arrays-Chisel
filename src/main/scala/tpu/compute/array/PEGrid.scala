@@ -10,13 +10,15 @@ import ifaces._
   *
   * Each valid wIn beat pushes the weights down one PE row (the rows of the
   * tile are sent last row first). aIn(i) feeds PE row i and must already
-  * be skewed: A[m][i] arrives at cycle m + i. psumOut(j) is the bottom PE of
+  * be skewed: A[m][i] arrives at cycle m + i. swap(i) is skewed the same
+  * way and marks the first row of a tile (see ProcessingElement). psumOut(j) is the bottom PE of
   * column j, so column j of A row m shows up at cycle m + rows + j.
   */
 class PEGrid(c: SAConfig) extends Module {
   val io = IO(new Bundle {
     val wIn = Flipped(Valid(Vec(c.cols, c.inT)))
     val aIn = Input(Vec(c.rows, c.inT))
+    val swap = Input(Vec(c.rows, Bool()))
     val psumOut = Output(Vec(c.cols, c.accT))
   })
 
@@ -27,6 +29,7 @@ class PEGrid(c: SAConfig) extends Module {
     pe.wEn := io.wIn.valid
     pe.wIn := (if (i == 0) io.wIn.bits(j) else pes(i - 1)(j).io.wOut)
     pe.aIn := (if (j == 0) io.aIn(i) else pes(i)(j - 1).io.aOut)
+    pe.swapIn := (if (j == 0) io.swap(i) else pes(i)(j - 1).io.swapOut)
     pe.psumIn := (if (i == 0) 0.S else pes(i - 1)(j).io.psumOut)
   }
 

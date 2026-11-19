@@ -287,10 +287,39 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.status.busyPeCycles.expect(48.U)
     }
   }
+
+  it should "issue the next tile before the previous one is done, and free the accumulators per N tile" in {
+    test(new Sequencer(config)) { dut =>
+      initialize(dut)
+      // 2 K-tiles x 2 N-tiles on a 2x2 array.
+      pokeInstruction(dut, aAddr = 0, bAddr = 0, cAddr = 0, m = 2, k = 4, n = 4, ldA = 4, ldB = 4, ldC = 4)
+      acceptInstruction(dut)
+
+      // All four tiles go out back to back, without any tileDone.
+      val waitAcc = Seq(false, false, true, false)
+      for (w <- waitAcc) {
+        dut.io.tileCmd.valid.expect(true.B)
+        dut.io.accCtrl.valid.expect(true.B)
+        dut.io.tileCmd.bits.waitAcc.expect(w.B)
+        dut.io.tileCmd.ready.poke(true.B)
+        dut.io.accCtrl.ready.poke(true.B)
+        dut.clock.step()
+      }
+      dut.io.tileCmd.ready.poke(false.B)
+      dut.io.accCtrl.ready.poke(false.B)
+      dut.io.tileCmd.valid.expect(false.B)
+      dut.io.status.busy.expect(true.B)
+
+      // accFree only on the done of a last K-tile that is not the final tile.
+      for ((free, i) <- Seq(false, true, false, false).zipWithIndex) {
+        dut.io.tileDone.valid.poke(true.B)
+        dut.io.accFree.expect(free.B)
+        dut.clock.step()
+        dut.io.tileDone.valid.poke(false.B)
+        dut.io.status.busy.expect((i < 3).B)
+      }
+      dut.io.status.busyPeCycles.expect(32.U)
+    }
+  }
 }
 
-/**
-  * TODO: Add tests for the following scenarios:
-  * - tileCmd and accCtrl are accepted in the same cycle
-  * - tileCmd is accepted before accCtrl
-  */

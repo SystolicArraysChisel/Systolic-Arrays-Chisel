@@ -17,4 +17,7 @@ class AccCtrl(c: SAConfig) extends Bundle {
   val shift = UInt(c.shiftW.W)
 
   val toInput = Bool() // write the finished rows into the input memory
+
+  val bias = Bool() // the first K-tile starts from the bias memory
+  val biasAddr = UInt(c.biasAddrW.W) // bias entry of this tile's first column
 }

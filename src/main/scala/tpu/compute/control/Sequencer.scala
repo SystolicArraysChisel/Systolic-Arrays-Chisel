@@ -52,6 +52,8 @@ class Sequencer(c: SAConfig) extends Module {
   val relu = RegInit(false.B)
   val toInput = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
+  val bias = RegInit(false.B)
+  val biasAddr = RegInit(0.U(c.biasAddrW.W))
 
   // Offsets identify the current tile within the K and N dimensions.
   val nOff = RegInit(0.U(c.dimW.W))
@@ -102,6 +104,8 @@ class Sequencer(c: SAConfig) extends Module {
   io.accCtrl.bits.requant := requant
   io.accCtrl.bits.shift := shift
   io.accCtrl.bits.toInput := toInput
+  io.accCtrl.bits.bias := bias
+  io.accCtrl.bits.biasAddr := biasAddr + nOff
 
   io.tileCmd.valid := (state === sIssue) && !cmdSent
   // Advance operand A by the K offset; bTileAddr already tracks the current B tile.
@@ -134,6 +138,8 @@ class Sequencer(c: SAConfig) extends Module {
         relu := io.instr.bits.relu
         toInput := io.instr.bits.toInput
         shift := io.instr.bits.shift
+        bias := io.instr.bits.bias
+        biasAddr := io.instr.bits.biasAddr
 
         kOff := 0.U
         nOff := 0.U

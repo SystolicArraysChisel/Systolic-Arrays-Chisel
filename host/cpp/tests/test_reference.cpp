@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <random>
 #include <stdexcept>
+#include <vector>
 
 #include "tpu_host/matrix.hpp"
 #include "tpu_host/reference.hpp"
@@ -59,6 +60,17 @@ TEST(Reference, MatchesANaiveProductOnRandomInt8) {
             EXPECT_EQ(c(i, j), expected);
         }
     }
+}
+
+TEST(Reference, BiasStartsEachColumnAndWrapsLikeTheAccumulator) {
+    const std::vector<std::int32_t> bias{100, -50};
+    EXPECT_EQ(matmul_ref(A, B, false, false, 0, 32, bias),
+              (Matrix<std::int64_t>(3, 2, {112, -49, 128, -45, 104, -53})));
+    // requant after the bias: (12 + 100) / 2 = 56, (1 - 50) / 2 rounds to -24 (ties up)
+    EXPECT_EQ(matmul_ref(A, B, true, false, 1, 32, bias)(0, 0), 56);
+    // INT32_MAX + 12 wraps to a negative value, as in the accumulator
+    const std::vector<std::int32_t> big{INT32_MAX, 0};
+    EXPECT_EQ(matmul_ref(A, B, false, false, 0, 32, big)(0, 0), INT32_MAX + 12LL - (1LL << 32));
 }
 
 TEST(Reference, RejectsAnAccumulatorOverflow) {

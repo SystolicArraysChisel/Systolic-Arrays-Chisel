@@ -67,7 +67,8 @@ class RefVectorsSpec extends AnyFlatSpec with ChiselScalatestTester {
   /** MATMUL fields as the decoder hands them to the sequencer. */
   case class SeenInstr(
       aAddr: Int, bAddr: Int, cAddr: Int, m: Int, k: Int, n: Int,
-      ldA: Int, ldB: Int, ldC: Int, requant: Boolean, relu: Boolean, shift: Int
+      ldA: Int, ldB: Int, ldC: Int, requant: Boolean, relu: Boolean, shift: Int,
+      bias: Boolean, biasAddr: Int
   )
 
   // The vectors use random sizes the real Sequencer cannot run, so the
@@ -79,7 +80,7 @@ class RefVectorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       val bytes = kind("FM").flatMap(l => hex(l(1)))
       val expected = kind("FM").map { l =>
         val f = l.drop(2).map(_.toInt)
-        SeenInstr(f(0), f(1), f(2), f(3), f(4), f(5), f(6), f(7), f(8), f(9) == 1, f(10) == 1, f(11))
+        SeenInstr(f(0), f(1), f(2), f(3), f(4), f(5), f(6), f(7), f(8), f(9) == 1, f(10) == 1, f(11), false, 0)
       }
       val seen = scala.collection.mutable.ArrayBuffer[SeenInstr]()
       var i = 0
@@ -94,7 +95,8 @@ class RefVectorsSpec extends AnyFlatSpec with ChiselScalatestTester {
             x.aAddr.peekInt().toInt, x.bAddr.peekInt().toInt, x.cAddr.peekInt().toInt,
             x.m.peekInt().toInt, x.k.peekInt().toInt, x.n.peekInt().toInt,
             x.ldA.peekInt().toInt, x.ldB.peekInt().toInt, x.ldC.peekInt().toInt,
-            x.requant.peekBoolean(), x.relu.peekBoolean(), x.shift.peekInt().toInt
+            x.requant.peekBoolean(), x.relu.peekBoolean(), x.shift.peekInt().toInt,
+            x.bias.peekBoolean(), x.biasAddr.peekInt().toInt
           )
         }
         dut.clock.step()

@@ -8,6 +8,7 @@ struct HwConfig {
     int cols = 4;               // PE columns
     int in_depth = 4096;        // int8 elements in the input memory (A and B)
     int out_depth = 4096;       // int32 words in the result memory (C)
+    int bias_depth = 256;       // int32 entries in the bias memory
     int max_m = 64;             // largest m one MATMUL accepts
     int acc_width = 32;         // bits of an accumulator
     int baud = 2'000'000;       // UART speed

@@ -46,6 +46,7 @@ class TpuDriver {
     Status check();
     Status wait_idle();
     void write(Addr addr, std::span<const std::int8_t> data);
+    void write_bias(Addr addr, std::span<const std::int32_t> data);
     std::vector<std::int64_t> read(Addr addr, Dim count, int size = 4);
     Perf run(const Matmul& mm);
     IntResult matmul(const Matrix<std::int8_t>& a, const Matrix<std::int8_t>& b,

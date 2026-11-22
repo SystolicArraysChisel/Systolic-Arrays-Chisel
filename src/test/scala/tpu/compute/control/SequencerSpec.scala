@@ -44,7 +44,9 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
       ldC: Int,
       requant: Boolean = false,
       relu: Boolean = false,
-      shift: Int = 0
+      shift: Int = 0,
+      bias: Boolean = false,
+      biasAddr: Int = 0
   ): Unit = {
     dut.io.instr.bits.op.poke(Opcode.Matmul)
 
@@ -63,6 +65,8 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.instr.bits.requant.poke(requant.B)
     dut.io.instr.bits.relu.poke(relu.B)
     dut.io.instr.bits.shift.poke(shift.U)
+    dut.io.instr.bits.bias.poke(bias.B)
+    dut.io.instr.bits.biasAddr.poke(biasAddr.U)
   }
 
   private def acceptInstruction(dut: Sequencer): Unit = {
@@ -102,6 +106,7 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.accCtrl.bits.requant.expect(requant.B)
     dut.io.accCtrl.bits.relu.expect(relu.B)
     dut.io.accCtrl.bits.shift.expect(shift.U)
+    dut.io.accCtrl.bits.bias.expect(false.B)
 
     dut.io.tileCmd.bits.aAddr.expect(aAddr.U)
     dut.io.tileCmd.bits.bAddr.expect(bAddr.U)
@@ -321,5 +326,22 @@ class SequencerSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.status.busyPeCycles.expect(32.U)
     }
   }
-}
 
+  it should "send the bias address of each N tile with every K tile" in {
+    test(new Sequencer(config)) { dut =>
+      initialize(dut)
+      pokeInstruction(dut, aAddr = 0, bAddr = 0, cAddr = 0, m = 2, k = 4, n = 4, ldA = 4, ldB = 4, ldC = 4,
+        bias = true, biasAddr = 6)
+      acceptInstruction(dut)
+      // 2 N tiles (2 columns each) of 2 K tiles: the bias moves by cols per N tile.
+      for ((a, i) <- Seq(6, 6, 8, 8).zipWithIndex) {
+        dut.io.accCtrl.valid.expect(true.B)
+        dut.io.accCtrl.bits.bias.expect(true.B)
+        dut.io.accCtrl.bits.biasAddr.expect(a.U, s"tile $i")
+        dut.io.accCtrl.ready.poke(true.B)
+        dut.io.tileCmd.ready.poke(true.B)
+        dut.clock.step()
+      }
+    }
+  }
+}

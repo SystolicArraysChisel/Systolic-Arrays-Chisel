@@ -19,6 +19,7 @@ HwConfig HwConfig::load(const std::string& path) {
     cfg.cols = j.value("cols", cfg.cols);
     cfg.in_depth = j.value("in_depth", cfg.in_depth);
     cfg.out_depth = j.value("out_depth", cfg.out_depth);
+    cfg.bias_depth = j.value("bias_depth", cfg.bias_depth);
     cfg.max_m = j.value("max_m", cfg.max_m);
     cfg.acc_width = j.value("acc_width", cfg.acc_width);
     cfg.baud = j.value("baud", cfg.baud);

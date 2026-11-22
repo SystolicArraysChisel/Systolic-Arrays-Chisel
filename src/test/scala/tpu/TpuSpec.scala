@@ -72,7 +72,7 @@ abstract class Host(c: SAConfig) {
     */
   def matmul(a: Mat, b: Mat, requant: Boolean = false, relu: Boolean = false,
              shift: Int = 0, bias: Option[Seq[Long]] = None,
-             biasAddr: Int = 0): (Mat, HostFrames.StatusReply) = {
+             biasAddr: Int = 0, leakShift: Int = 0): (Mat, HostFrames.StatusReply) = {
     val (m, k, n) = (a.length, b.length, b.head.length)
     val (kp, np) = (roundUp(k, c.banks), roundUp(n, c.banks))
     val aFlat = a.flatMap(_.padTo(kp, 0L))
@@ -83,7 +83,8 @@ abstract class Host(c: SAConfig) {
     write(bAddr, bFlat)
 
     bias.foreach(v => writeBias(biasAddr, v.padTo(np, 0L)))
-    val flags = (if (requant) 1 else 0) | (if (relu) 2 else 0) | (if (bias.isDefined) 8 else 0)
+    val flags = (if (requant) 1 else 0) | (if (relu) 2 else 0) | (if (bias.isDefined) 8 else 0) |
+      (leakShift << HostProtocol.Matmul.LeakShiftBit)
     send(HostFrames.Matmul(aAddr, bAddr, 0, m, kp, np, kp, np, np, flags, shift, biasAddr).bytes)
     var st = status()
     while (st.busy) st = status()
@@ -175,9 +176,9 @@ class TpuSpec extends AnyFlatSpec with ChiselScalatestTester {
 
   def check(host: Host, a: Mat, bm: Mat, requant: Boolean = false, relu: Boolean = false,
             shift: Int = 0, bias: Option[Seq[Long]] = None,
-            biasAddr: Int = 0): HostFrames.StatusReply = {
-    val (got, st) = host.matmul(a, bm, requant, relu, shift, bias, biasAddr)
-    assert(got == RefModel.matmul(a, bm, requant, relu, shift, bias = bias),
+            biasAddr: Int = 0, leakShift: Int = 0): HostFrames.StatusReply = {
+    val (got, st) = host.matmul(a, bm, requant, relu, shift, bias, biasAddr, leakShift)
+    assert(got == RefModel.matmul(a, bm, requant, relu, shift, bias = bias, leakShift = leakShift),
       s"${a.length}x${bm.length}x${bm.head.length} requant=$requant relu=$relu shift=$shift")
     assert(!st.error && !st.overrun, s"STATUS after MATMUL: $st")
     st
@@ -233,6 +234,17 @@ class TpuSpec extends AnyFlatSpec with ChiselScalatestTester {
       check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 4), requant = true,
         relu = true, shift = 7)
       check(host, RefModel.randomMatrix(rnd, 3, 4), RefModel.randomMatrix(rnd, 4, 4))
+    }
+  }
+
+  it should "apply a leaky ReLU: requant on and off, with a bias, several tiles" in {
+    withCore { host =>
+      val rnd = new Random(11)
+      check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 12), requant = true, relu = true,
+        shift = 8, leakShift = 3)
+      check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 12), relu = true, leakShift = 5)
+      check(host, RefModel.randomMatrix(rnd, 3, 4), RefModel.randomMatrix(rnd, 4, 6), requant = true, relu = true,
+        shift = 6, bias = Some(RefModel.randomMatrix(rnd, 1, 6, -500, 500).head), leakShift = 7)
     }
   }
 

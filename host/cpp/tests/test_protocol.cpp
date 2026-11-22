@@ -89,6 +89,13 @@ TEST(Protocol, BiasFrameIsInt32LittleEndian) {
                      0x78, 0x56, 0x34, 0x12}));
 }
 
+TEST(Protocol, MatmulFrameSetsTheLeakShiftBits) {
+    Matmul mm = dense();
+    mm.relu = true;
+    mm.leak_shift = 5;
+    EXPECT_EQ(mm.frame()[19], 0b1010010);  // relu, leakShift = 5 in bits 4-6
+}
+
 TEST(Protocol, MatmulFrameSetsTheToInputBit) {
     Matmul mm = dense();
     mm.requant = true;
@@ -173,6 +180,19 @@ TEST(MatmulCheck, BiasRules) {
     mm.bias = false;
     EXPECT_THAT([&mm] { mm.check(CFG); },
                 ThrowsMessage<ProtocolError>(HasSubstr("biasAddr must be 0")));
+}
+
+TEST(MatmulCheck, LeakShiftRules) {
+    Matmul mm = dense();
+    mm.relu = true;
+    mm.leak_shift = 7;
+    EXPECT_NO_THROW(mm.check(CFG));
+    mm.leak_shift = 8;
+    EXPECT_THAT([&mm] { mm.check(CFG); }, ThrowsMessage<ProtocolError>(HasSubstr("leakShift")));
+    mm.leak_shift = 1;
+    mm.relu = false;
+    EXPECT_THAT([&mm] { mm.check(CFG); },
+                ThrowsMessage<ProtocolError>(HasSubstr("leakShift must be 0")));
 }
 
 // dense() with C written back into the input memory, after B (which ends at 96).

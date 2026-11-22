@@ -145,6 +145,8 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
   io.instr.bits.toInput := mmFlags(Matmul.ToInputBit)
   io.instr.bits.shift := mmShift(c.shiftW - 1, 0)
   io.instr.bits.bias := mmFlags(Matmul.BiasBit)
+  val mmLeak = mmFlags(Matmul.LeakShiftBit + Matmul.LeakShiftWidth - 1, Matmul.LeakShiftBit)
+  io.instr.bits.leakShift := mmLeak
   io.instr.bits.biasAddr := field16(Matmul.BiasAddrOffset - 1)(c.biasAddrW - 1, 0)
 
   switch(state) {
@@ -229,7 +231,10 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
           }
         }
         is(Op.Matmul.U) {
-          when(mmShift >= c.accWidth.U || mmFlags(7, Matmul.usedFlagBits) =/= 0.U) {
+          when(
+            mmShift >= c.accWidth.U || mmFlags(7, Matmul.usedFlagBits) =/= 0.U ||
+              (!mmFlags(Matmul.ReluBit) && mmLeak =/= 0.U)
+          ) {
             errEvent := true.B
           }.otherwise {
             state := DecoderState.sInstr

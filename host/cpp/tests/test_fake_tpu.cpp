@@ -120,6 +120,23 @@ TEST(FakeTpu, MatmulAppliesRequantAndRelu) {
     EXPECT_EQ(std::vector<std::int64_t>(fake.res.begin(), fake.res.begin() + 16), c.data());
 }
 
+TEST(FakeTpu, MatmulAppliesALeakyRelu) {
+    std::mt19937 rng(9);
+    std::uniform_int_distribution<int> dist(-128, 127);
+    Matrix<std::int8_t> a(4, 8), b(8, 4);
+    for (auto& v : a) v = static_cast<std::int8_t>(dist(rng));
+    for (auto& v : b) v = static_cast<std::int8_t>(dist(rng));
+    FakeTpu fake;
+    fake.write(write_frame(0, Bytes(a.data().begin(), a.data().end())));
+    fake.write(write_frame(32, Bytes(b.data().begin(), b.data().end())));
+    fake.write(Matmul{.a_addr = 0, .b_addr = 32, .c_addr = 0, .m = 4, .k = 8, .n = 4,
+                      .ld_a = 8, .ld_b = 4, .ld_c = 4, .requant = true, .relu = true, .shift = 6,
+                      .leak_shift = 3}
+                   .frame());
+    const Matrix<std::int64_t> c = matmul_ref(a, b, true, true, 6, 32, {}, 3);
+    EXPECT_EQ(std::vector<std::int64_t>(fake.res.begin(), fake.res.begin() + 16), c.data());
+}
+
 TEST(FakeTpu, BiasFrameFillsTheBiasMemoryAndMatmulUsesIt) {
     const Matrix<std::int8_t> a(3, 4, {1, 2, 3, 4, 5, 6, 7, 8, 1, 0, -1, 2});
     const Matrix<std::int8_t> b(4, 4, {1, 0, 0, 1, 1, 1, 2, -1, 0, 0, 0, 0, 3, 3, 3, 3});
@@ -192,5 +209,10 @@ TEST(FakeTpu, ErrorsAreStickyUntilStatus) {
     Bytes bad_shift = Matmul{.m = 1, .k = 4, .n = 4, .ld_a = 4, .ld_b = 4, .ld_c = 4}.frame();
     bad_shift[20] = 32;  // >= acc_width
     fake.write(bad_shift);
+    EXPECT_TRUE(status_of(fake).error);
+
+    Bytes leak_without_relu = Matmul{.m = 1, .k = 4, .n = 4, .ld_a = 4, .ld_b = 4, .ld_c = 4}.frame();
+    leak_without_relu[19] = 1 << LEAK_SHIFT_BIT;
+    fake.write(leak_without_relu);
     EXPECT_TRUE(status_of(fake).error);
 }

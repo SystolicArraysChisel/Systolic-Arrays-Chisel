@@ -66,7 +66,7 @@ case class SeenTileCmd(aAddr: Int, bAddr: Int, ldA: Int, ldB: Int, m: Int)
 case class SeenAccCtrl(
     first: Boolean, last: Boolean, cAddr: Int, ldC: Int, m: Int,
     relu: Boolean, requant: Boolean, shift: Int, toInput: Boolean,
-    bias: Boolean, biasAddr: Int
+    bias: Boolean, biasAddr: Int, leakShift: Int
 )
 
 object Tiles {
@@ -89,7 +89,8 @@ object Tiles {
         (mm.cAddr + nOff) % (1 << c.resAddrW), mm.ldC, mm.m,
         relu = (mm.flags & 2) != 0, requant = (mm.flags & 1) != 0, mm.shift,
         toInput = (mm.flags & 4) != 0,
-        bias = (mm.flags & 8) != 0, (mm.biasAddr + nOff) % c.biasDepth
+        bias = (mm.flags & 8) != 0, (mm.biasAddr + nOff) % c.biasDepth,
+        leakShift = (mm.flags >> 4) & 7
       )
     )
 }
@@ -193,7 +194,8 @@ class DecoderBench(dut: DecoderWithSequencer, seed: Int = 0, randomReady: Boolea
       a.first.peekBoolean(), a.last.peekBoolean(), a.cAddr.peekInt().toInt,
       a.ldC.peekInt().toInt, a.m.peekInt().toInt,
       a.relu.peekBoolean(), a.requant.peekBoolean(), a.shift.peekInt().toInt,
-      a.toInput.peekBoolean(), a.bias.peekBoolean(), a.biasAddr.peekInt().toInt
+      a.toInput.peekBoolean(), a.bias.peekBoolean(), a.biasAddr.peekInt().toInt,
+      a.leakShift.peekInt().toInt
     )
   }
 

@@ -56,7 +56,7 @@ class CommandDecoderSpec extends AnyFlatSpec with ChiselScalatestTester {
     withBench() { (_, t) =>
       // 2 N tiles of 2 K tiles each; every field shows up in the tile commands
       val mm = Matmul(aAddr = 0x100, bAddr = 0x204, cAddr = 0x308, m = 33, k = 8, n = 8,
-        ldA = 0x1234, ldB = 0x0abc, ldC = 0xfff0, flags = 0x0b, shift = 31, biasAddr = 0x44)
+        ldA = 0x1234, ldB = 0x0abc, ldC = 0xfff0, flags = 0x5b, shift = 31, biasAddr = 0x44)
       t.send(mm.bytes)
       t.drain()
       assert(t.tiles == Tiles.expected(mm, c))
@@ -123,7 +123,8 @@ class CommandDecoderSpec extends AnyFlatSpec with ChiselScalatestTester {
       "unknown opcode" -> Seq(0x99),
       "READ size 2" -> read(0, 3, 2),
       "MATMUL shift 32" -> Matmul(shift = 32).bytes,
-      "MATMUL flag bit 4" -> Matmul(flags = 0x10).bytes
+      "MATMUL leakShift without relu" -> Matmul(flags = 0x10).bytes,
+      "MATMUL flag bit 7" -> Matmul(flags = 0x80).bytes
     )
     for ((name, frame) <- invalid) withBench() { (dut, t) =>
       dut.io.error.expect(false.B)

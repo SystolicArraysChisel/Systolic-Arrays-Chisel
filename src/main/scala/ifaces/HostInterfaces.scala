@@ -75,6 +75,8 @@ class Instruction(c: SAConfig) extends Bundle {
 
   val relu = Bool() // Apply ReLU after requantization.
 
+  val leakShift = UInt(3.W) // Leaky ReLU: negative values become x >> leakShift (0 = plain ReLU); needs relu
+
   val toInput = Bool() // Write C into the input memory (as the next A) instead of the result memory; needs requant
 
   val shift = UInt(

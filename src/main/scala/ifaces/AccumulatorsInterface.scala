@@ -12,6 +12,7 @@ class AccCtrl(c: SAConfig) extends Bundle {
   val m = UInt(c.dimW.W)
 
   val relu = Bool()
+  val leakShift = UInt(3.W)
 
   val requant = Bool()
   val shift = UInt(c.shiftW.W)

@@ -37,6 +37,7 @@ class Accumulators(c: SAConfig) extends Module {
   val ldC = RegInit(0.U(c.dimW.W))
   val m = RegInit(0.U(c.dimW.W))
   val relu = RegInit(false.B)
+  val leakShift = RegInit(0.U(3.W))
   val requant = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
   val toInput = RegInit(false.B) // write the rows into the input memory
@@ -198,7 +199,7 @@ class Accumulators(c: SAConfig) extends Module {
     val processed = Mux(requant, saturated, widenedValue)
     postProcessed(col) := Mux(
       relu,
-      Mux(processed < 0.S, 0.S, processed),
+      Mux(processed < 0.S, Mux(leakShift === 0.U, 0.S, (processed >> leakShift).asSInt), processed),
       processed
     )
   }
@@ -216,6 +217,7 @@ class Accumulators(c: SAConfig) extends Module {
     ldC := io.ctrl.bits.ldC
     m := io.ctrl.bits.m
     relu := io.ctrl.bits.relu
+    leakShift := io.ctrl.bits.leakShift
     requant := io.ctrl.bits.requant
     shift := io.ctrl.bits.shift
     toInput := io.ctrl.bits.toInput

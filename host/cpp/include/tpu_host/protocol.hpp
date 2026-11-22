@@ -22,6 +22,8 @@ inline constexpr int REQUANT_BIT = 0;                  // bit positions in the M
 inline constexpr int RELU_BIT = 1;
 inline constexpr int TO_INPUT_BIT = 2;  // write C back into the input memory
 inline constexpr int BIAS_BIT = 3;      // start the accumulators from the bias memory
+inline constexpr int LEAK_SHIFT_BIT = 4;  // bits 4 to 6: leaky ReLU shift
+inline constexpr int LEAK_SHIFT_MAX = 7;
 
 inline constexpr std::size_t STATUS_REPLY_BYTES = 9;
 inline constexpr int BUSY_BIT = 0;  // bit positions in the STATUS flags byte
@@ -63,6 +65,9 @@ struct Matmul {
     // instead of 0; the sum wraps in acc_width bits. bias_addr must be 0 without bias.
     bool bias = false;
     int bias_addr = 0;
+    // Leaky ReLU: with relu, a negative value x becomes x >> leak_shift (floor)
+    // instead of 0. 0 is the plain ReLU; must be 0 without relu.
+    int leak_shift = 0;
 
     Bytes frame() const;
     void check(const HwConfig& cfg) const;

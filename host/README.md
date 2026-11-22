@@ -49,6 +49,10 @@ Then, from `host/cpp/`:
 TPU_PORT=COM3 TPU_CONFIG=../../build/4x4/config.json ./build/tpu_host_tests --gtest_filter=Board.*
 ```
 
+`./build/run_board` prints a performance table (cycles, utilization, MAC/s) for
+random square products, checked against the reference model: on the board with
+`TPU_PORT` (and `TPU_CONFIG`) set as above, on `FakeTpu` without `TPU_PORT`.
+
 The port is the "USB Serial Port" the Nexys4 DDR creates: `COM3` on Windows
 (Device Manager, FTDI), `/dev/cu.usbserial-*` on macOS, `/dev/ttyUSB*` on Linux. A `timeout: got 0 of 9 reply bytes` usually means the FPGA is not
 programmed.

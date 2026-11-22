@@ -18,6 +18,7 @@
 #include "tpu_host/matrix.hpp"
 #include "tpu_host/reference.hpp"
 #include "tpu_host/tpu_driver.hpp"
+#include "chain_check.hpp"
 
 using namespace tpu_host;
 
@@ -118,4 +119,14 @@ TEST_F(Board, FloatProductIsClose) {
         }
     }
     EXPECT_LT(err / peak, 0.05) << "max error relative to the largest |C|";
+}
+
+TEST_F(Board, TwoLayerChainMatchesReference) {
+    std::mt19937 rng(6);
+    const Matrix<std::int8_t> x = random_int8(rng, 6, 8);
+    const Matrix<std::int8_t> w1 = random_int8(rng, 8, 12);
+    const Matrix<std::int8_t> w2 = random_int8(rng, 12, 4);
+    TpuDriver tpu = open();
+    tpu.status();  // clear flags left from before
+    check_two_layer_chain(tpu, x, w1, w2);
 }

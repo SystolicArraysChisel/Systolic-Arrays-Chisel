@@ -53,6 +53,23 @@ The port is the "USB Serial Port" the Nexys4 DDR creates: `COM3` on Windows
 (Device Manager, FTDI), `/dev/cu.usbserial-*` on macOS, `/dev/ttyUSB*` on Linux. A `timeout: got 0 of 9 reply bytes` usually means the FPGA is not
 programmed.
 
+## Digits demo
+
+A 64-16-10 MLP for sklearn's handwritten digits: bias + leaky ReLU (slope 1/8) in layer 1,
+chained on the TPU without going back to the host, bias and raw int32 logits in layer 2.
+`demo/digits_model.json` is committed, so the demo runs without Python. To retrain it
+(from the repository root):
+
+```
+python3 -m venv .venv; .venv/bin/pip install -r scripts/requirements.txt
+.venv/bin/python scripts/train_digits.py     # float 96.7 %, integer pipeline 96.4 % on the 450 test digits
+```
+
+Then, from `host/cpp/`: `./build/run_mlp` (FakeTpu, so the cycles are a model, not hardware),
+or `TPU_PORT=COM3 TPU_CONFIG=../../build/4x4/config.json ./build/run_mlp` on the board.
+It checks every batch's logits against the C++ reference and the predictions against the
+Python simulation, then prints the accuracy (96.4 %), the cycles and the utilization per layer.
+
 ## Modules
 
 | File | Content |

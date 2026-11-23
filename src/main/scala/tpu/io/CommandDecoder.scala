@@ -7,8 +7,8 @@ import ifaces._
 import tpu.io.HostProtocol._
 
 object DecoderState extends ChiselEnum {
-  val sOpcode, sHeader, sExec, sWriteData, sReadReq, sReadResp, sSend, sInstr =
-    Value
+  val sOpcode, sHeader, sExec, sWriteData, sReadReq, sReadResp, sSend, sInstr,
+    sBiasData = Value
 }
 
 /** Parses the byte stream from the host into commands (protocol in
@@ -34,6 +34,9 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
     // Sequencer side
     val instr = Decoupled(new Instruction(c)) // MATMUL
     val status = Input(new SeqStatus) // busy and counters, for STATUS
+
+    // Accumulators side
+    val biasWr = Valid(new BiasWritePort(c)) // BIAS: one entry per 4 data bytes
   })
 
   val maxHeader = Matmul.payloadBytes // longest header: the MATMUL payload
@@ -64,6 +67,10 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
     0.U(3.W)
   ) // bytes per element of the current READ (1 or 4)
 
+  /** BIAS: bytes of the current entry received so far (low byte first). */
+  val biasBytes = RegInit(0.U(32.W))
+  val biasCnt = RegInit(0.U(2.W))
+
   /** Reply being sent, low byte first, and the number of bytes left in it. */
   val txShift = RegInit(0.U(replyBits.W))
   val txLeft = RegInit(0.U(log2Ceil(Status.replyBytes + 1).W))
@@ -82,6 +89,9 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
   io.bufRdReq.bits.addr := addr(c.outAddrW - 1, 0)
   io.bufRdResp.ready := false.B
   io.instr.valid := false.B
+  io.biasWr.valid := false.B
+  io.biasWr.bits.addr := addr(c.biasAddrW - 1, 0)
+  io.biasWr.bits.data := Cat(io.rx.bits, biasBytes(31, 8)).asSInt
 
   // error and overrun flags
   val errEvent = WireDefault(
@@ -104,7 +114,8 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
 
   // frame timeout only while waiting for a byte of a started frame
   val inFrame =
-    state === DecoderState.sHeader || state === DecoderState.sWriteData
+    state === DecoderState.sHeader || state === DecoderState.sWriteData ||
+      state === DecoderState.sBiasData
   val timedOut = inFrame && !io.rx.valid && timer === b.frameTimeout.U
   when(!inFrame || io.rx.fire) {
     timer := 0.U
@@ -133,6 +144,8 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
   io.instr.bits.relu := mmFlags(Matmul.ReluBit)
   io.instr.bits.toInput := mmFlags(Matmul.ToInputBit)
   io.instr.bits.shift := mmShift(c.shiftW - 1, 0)
+  io.instr.bits.bias := mmFlags(Matmul.BiasBit)
+  io.instr.bits.biasAddr := field16(Matmul.BiasAddrOffset - 1)(c.biasAddrW - 1, 0)
 
   switch(state) {
     is(DecoderState.sOpcode) {
@@ -151,6 +164,10 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
           }
           is(Op.Matmul.U) {
             hdrLen := Matmul.payloadBytes.U
+            state := DecoderState.sHeader
+          }
+          is(Op.Bias.U) {
+            hdrLen := Bias.headerBytes.U
             state := DecoderState.sHeader
           }
           is(Op.Status.U) {
@@ -194,6 +211,14 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
         is(Op.Write.U) {
           when(count =/= 0.U) { state := DecoderState.sWriteData }
         }
+        is(Op.Bias.U) {
+          biasCnt := 0.U
+          when(io.status.busy) {
+            state := DecoderState.sExec // wait: a running MATMUL uses the bias memory
+          }.elsewhen(count =/= 0.U) {
+            state := DecoderState.sBiasData
+          }
+        }
         is(Op.Read.U) {
           val size = field8(4)
           readSize := size
@@ -220,6 +245,20 @@ class CommandDecoder(c: SAConfig, b: BoardConfig) extends Module {
         addr := addr + 1.U
         remaining := remaining - 1.U
         when(remaining === 1.U) { state := DecoderState.sOpcode }
+      }
+    }
+
+    is(DecoderState.sBiasData) { // every 4th byte completes one bias entry
+      io.rx.ready := true.B
+      when(io.rx.fire) {
+        biasBytes := io.biasWr.bits.data.asUInt
+        biasCnt := biasCnt + 1.U
+        when(biasCnt === 3.U) {
+          io.biasWr.valid := true.B
+          addr := addr + 1.U
+          remaining := remaining - 1.U
+          when(remaining === 1.U) { state := DecoderState.sOpcode }
+        }
       }
     }
 

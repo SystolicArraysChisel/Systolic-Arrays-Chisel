@@ -4,6 +4,7 @@
   "cols": 8,
   "in_depth": 4096,
   "out_depth": 4096,
+  "bias_depth": 128,
   "max_m": 64,
   "acc_width": 32,
   "baud": 2000000,

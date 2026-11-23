@@ -9,7 +9,7 @@
 #include "tpu_host/types.hpp"
 
 namespace tpu_host {
-enum class Op : std::uint8_t { Write = 0x01, Read = 0x02, Matmul = 0x03, Status = 0x04 };
+enum class Op : std::uint8_t { Write = 0x01, Read = 0x02, Matmul = 0x03, Status = 0x04, Bias = 0x05 };
 
 struct HwConfig;
 
@@ -17,10 +17,11 @@ inline constexpr std::size_t FIELD_BYTES = 2;
 inline constexpr int MAX_FIELD =
     0xFFFF;  // largest value of a 2-byte field (addr, count, dimension)
 
-inline constexpr std::size_t MATMUL_FRAME_BYTES = 21;  // opcode + 20 payload bytes
+inline constexpr std::size_t MATMUL_FRAME_BYTES = 23;  // opcode + 22 payload bytes
 inline constexpr int REQUANT_BIT = 0;                  // bit positions in the MATMUL flags byte
 inline constexpr int RELU_BIT = 1;
 inline constexpr int TO_INPUT_BIT = 2;  // write C back into the input memory
+inline constexpr int BIAS_BIT = 3;      // start the accumulators from the bias memory
 
 inline constexpr std::size_t STATUS_REPLY_BYTES = 9;
 inline constexpr int BUSY_BIT = 0;  // bit positions in the STATUS flags byte
@@ -38,6 +39,8 @@ class ProtocolError : public std::invalid_argument {
 Bytes write_frame(Addr addr, ByteView data);
 Bytes read_frame(Addr addr, Dim count, int size);
 Bytes status_frame();
+// int32 entries addr, addr + 1, ... of the bias memory, little-endian.
+Bytes bias_frame(Addr addr, std::span<const std::int32_t> data);
 
 struct Matmul {
     Addr a_addr = 0;
@@ -56,6 +59,10 @@ struct Matmul {
     // the host. Needs requant.
     bool to_input = false;
     int shift = 0;
+    // Start each accumulator from bias[bias_addr + j] (int32, loaded with BIAS)
+    // instead of 0; the sum wraps in acc_width bits. bias_addr must be 0 without bias.
+    bool bias = false;
+    int bias_addr = 0;
 
     Bytes frame() const;
     void check(const HwConfig& cfg) const;

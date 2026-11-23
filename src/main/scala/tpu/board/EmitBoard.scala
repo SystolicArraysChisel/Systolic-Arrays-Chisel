@@ -40,7 +40,7 @@ object EmitBoard {
   def configJson(name: String, c: SAConfig, b: BoardConfig): String =
     Seq(
       "name" -> s"\"$name\"", "rows" -> c.rows, "cols" -> c.cols, "in_depth" -> c.inDepth,
-      "out_depth" -> c.outDepth, "max_m" -> c.maxM, "acc_width" -> c.accWidth, "baud" -> b.baud,
+      "out_depth" -> c.outDepth, "bias_depth" -> c.biasDepth, "max_m" -> c.maxM, "acc_width" -> c.accWidth, "baud" -> b.baud,
       "rx_fifo_depth" -> b.rxFifoDepth, "clock_hz" -> b.clockHz
     ).map { case (k, v) => s"  \"$k\": $v" }.mkString("{\n", ",\n", "\n}\n")
 

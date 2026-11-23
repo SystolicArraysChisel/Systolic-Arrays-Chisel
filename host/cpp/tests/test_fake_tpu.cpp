@@ -120,6 +120,28 @@ TEST(FakeTpu, MatmulAppliesRequantAndRelu) {
     EXPECT_EQ(std::vector<std::int64_t>(fake.res.begin(), fake.res.begin() + 16), c.data());
 }
 
+TEST(FakeTpu, BiasFrameFillsTheBiasMemoryAndMatmulUsesIt) {
+    const Matrix<std::int8_t> a(3, 4, {1, 2, 3, 4, 5, 6, 7, 8, 1, 0, -1, 2});
+    const Matrix<std::int8_t> b(4, 4, {1, 0, 0, 1, 1, 1, 2, -1, 0, 0, 0, 0, 3, 3, 3, 3});
+    const std::vector<std::int32_t> bias{7, -9, 1000, -1000, 5, 6, 7, 8};
+    FakeTpu fake;
+    fake.write(write_frame(0, Bytes(a.data().begin(), a.data().end())));
+    fake.write(write_frame(16, Bytes(b.data().begin(), b.data().end())));
+    fake.write(bias_frame(10, bias));
+    EXPECT_EQ(fake.bias[10], 7);
+    EXPECT_EQ(fake.bias[13], -1000);
+    EXPECT_EQ(fake.ops, (std::vector<Op>{Op::Write, Op::Write, Op::Bias}));
+
+    // bias_addr = 12 selects entries 12..15: 1000, -1000, 5, 6
+    fake.write(Matmul{.a_addr = 0, .b_addr = 16, .c_addr = 0, .m = 3, .k = 4, .n = 4,
+                      .ld_a = 4, .ld_b = 4, .ld_c = 4, .bias = true, .bias_addr = 12}
+                   .frame());
+    const std::vector<std::int32_t> used{1000, -1000, 5, 6};
+    EXPECT_EQ(std::vector<std::int64_t>(fake.res.begin(), fake.res.begin() + 12),
+              matmul_ref(a, b, false, false, 0, 32, used).data());
+    EXPECT_FALSE(status_of(fake).error);
+}
+
 TEST(FakeTpu, ToInputWritesCBackIntoTheInputMemory) {
     std::mt19937 rng(8);
     std::uniform_int_distribution<int> dist(-128, 127);

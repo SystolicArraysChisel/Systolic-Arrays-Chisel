@@ -11,8 +11,10 @@ import scala.util.Random
 object RefModel {
   type Mat = Seq[Seq[Long]]
 
-  /** Exact integer product, checked to fit in the accumulator. */
-  def matmulAcc(a: Mat, b: Mat, accWidth: Int = 32): Mat = {
+  /** Integer product, checked to fit in the accumulator, then plus the bias of
+    * its column (if any), wrapped to accWidth bits like the accumulator.
+    */
+  def matmulAcc(a: Mat, b: Mat, accWidth: Int = 32, bias: Option[Seq[Long]] = None): Mat = {
     val k = b.length
     require(a.forall(_.length == k), s"cannot multiply ${a.length}x${a.headOption.map(_.length)} by ${k}x?")
     val n = b.headOption.map(_.length).getOrElse(0)
@@ -21,7 +23,8 @@ object RefModel {
       (0 until n).map { j =>
         val s = (0 until k).map(i => row(i) * b(i)(j)).sum
         if (s < lo || s > hi) throw new ArithmeticException(s"a sum does not fit in $accWidth bits")
-        s
+        val y = s + bias.fold(0L)(_(j))
+        (y << (64 - accWidth)) >> (64 - accWidth)
       }
     }
   }
@@ -32,8 +35,8 @@ object RefModel {
   }
 
   def matmul(a: Mat, b: Mat, requant: Boolean = false, relu: Boolean = false, shift: Int = 0,
-             accWidth: Int = 32): Mat =
-    matmulAcc(a, b, accWidth).map(_.map(postProcess(_, requant, relu, shift)))
+             accWidth: Int = 32, bias: Option[Seq[Long]] = None): Mat =
+    matmulAcc(a, b, accWidth, bias).map(_.map(postProcess(_, requant, relu, shift)))
 
   /** Random rows x cols matrix with elements in [lo, hi] (int8 by default). */
   def randomMatrix(rnd: Random, rows: Int, cols: Int, lo: Int = -128, hi: Int = 127): Mat =

@@ -55,6 +55,7 @@ class TpuCore(c: SAConfig, b: BoardConfig) extends Module {
   array.io.aFirst := mover.io.aFirst
   acc.io.in := array.io.out
   acc.io.ctrl <> seq.io.accCtrl
+  acc.io.biasWr := dec.io.biasWr
   seq.io.tileDone := acc.io.done
   buf.io.resWr <> acc.io.resWr
 }

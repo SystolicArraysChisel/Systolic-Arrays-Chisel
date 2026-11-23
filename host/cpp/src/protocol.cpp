@@ -47,6 +47,19 @@ Bytes read_frame(Addr addr, Dim count, int size) {
     frame.push_back(static_cast<std::uint8_t>(size));
     return frame;
 }
+Bytes bias_frame(Addr addr, std::span<const std::int32_t> data) {
+    Bytes frame;
+    frame.reserve(sizeof(Op) + 2 * FIELD_BYTES + 4 * data.size());
+    frame.push_back(static_cast<std::uint8_t>(Op::Bias));
+    append_le16(frame, addr);
+    append_le16(frame, static_cast<int>(data.size()));
+    for (const std::int32_t v : data) {
+        for (int i = 0; i < 4; ++i) {
+            frame.push_back(static_cast<std::uint8_t>(static_cast<std::uint32_t>(v) >> (8 * i)));
+        }
+    }
+    return frame;
+}
 Bytes Matmul::frame() const {
     Bytes frame;
     frame.reserve(MATMUL_FRAME_BYTES);
@@ -60,9 +73,11 @@ Bytes Matmul::frame() const {
     append_le16(frame, ld_a);
     append_le16(frame, ld_b);
     append_le16(frame, ld_c);
-    int flags = (requant << REQUANT_BIT) | (relu << RELU_BIT) | (to_input << TO_INPUT_BIT);
+    int flags = (requant << REQUANT_BIT) | (relu << RELU_BIT) | (to_input << TO_INPUT_BIT) |
+                (bias << BIAS_BIT);
     frame.push_back(static_cast<std::uint8_t>(flags));
     frame.push_back(static_cast<std::uint8_t>(shift));
+    append_le16(frame, bias_addr);
     return frame;
 }
 Status parse_status(ByteView reply) {
@@ -122,6 +137,14 @@ void Matmul::check(const HwConfig& cfg) const {
              "with toInput, C must not overlap A or B");
     } else {
         need(c_end <= cfg.out_depth, "C does not fit in the result memory");
+    }
+    if (bias) {
+        need(bias_addr >= 0 && bias_addr % cols == 0,
+             "biasAddr = " + std::to_string(bias_addr) + " must be a multiple of cols (" +
+                 std::to_string(cols) + ")");
+        need(bias_addr + n <= cfg.bias_depth, "the bias entries do not fit in the bias memory");
+    } else {
+        need(bias_addr == 0, "biasAddr must be 0 without bias");
     }
     need(
         0 <= shift && shift < cfg.acc_width,

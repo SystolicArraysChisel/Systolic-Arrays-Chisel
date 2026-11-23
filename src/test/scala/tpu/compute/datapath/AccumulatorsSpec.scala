@@ -41,7 +41,8 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       shift: Int = 0,
       relu: Boolean = false,
       bias: Boolean = false,
-      biasAddr: Int = 0
+      biasAddr: Int = 0,
+      leakShift: Int = 0
   ): Unit = {
     dut.io.ctrl.bits.first.poke(first.B)
     dut.io.ctrl.bits.last.poke(last.B)
@@ -51,6 +52,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.ctrl.bits.requant.poke(requant.B)
     dut.io.ctrl.bits.shift.poke(shift.U)
     dut.io.ctrl.bits.relu.poke(relu.B)
+    dut.io.ctrl.bits.leakShift.poke(leakShift.U)
     dut.io.ctrl.bits.toInput.poke(false.B)
     dut.io.ctrl.bits.bias.poke(bias.B)
     dut.io.ctrl.bits.biasAddr.poke(biasAddr.U)
@@ -190,6 +192,30 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       )
       sendRows(dut, Seq(Seq(40, -40), Seq(-1, 100)), last = true)
       readWrites(dut, Seq(0 -> Seq(10, 0), 1 -> Seq(0, 25)))
+    }
+  }
+
+  it should "scale negative values by 2^-leakShift (floor) with leaky ReLU, with and without requantization" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      // leakShift = 2, no requant: -9 >> 2 = -3 (floor of -2.25), -4 >> 2 = -1, 15 is unchanged
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 2,
+        relu = true, leakShift = 2
+      )
+      sendRows(dut, Seq(Seq(15, -9), Seq(-4, 45)), last = true)
+      readWrites(dut, Seq(0 -> Seq(15, -3), 1 -> Seq(-1, 45)))
+
+      // requant shift = 2, leakShift = 1: (-37 + 2) >> 2 = -9, then -9 >> 1 = -5 (floor of -4.5)
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 1,
+        requant = true, shift = 2, relu = true, leakShift = 1
+      )
+      sendRows(dut, Seq(Seq(-37, 40)), last = true)
+      readWrites(dut, Seq(0 -> Seq(-5, 10)))
     }
   }
 

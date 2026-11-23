@@ -74,7 +74,7 @@ Bytes Matmul::frame() const {
     append_le16(frame, ld_b);
     append_le16(frame, ld_c);
     int flags = (requant << REQUANT_BIT) | (relu << RELU_BIT) | (to_input << TO_INPUT_BIT) |
-                (bias << BIAS_BIT);
+                (bias << BIAS_BIT) | (leak_shift << LEAK_SHIFT_BIT);
     frame.push_back(static_cast<std::uint8_t>(flags));
     frame.push_back(static_cast<std::uint8_t>(shift));
     append_le16(frame, bias_addr);
@@ -138,6 +138,10 @@ void Matmul::check(const HwConfig& cfg) const {
     } else {
         need(c_end <= cfg.out_depth, "C does not fit in the result memory");
     }
+    need(0 <= leak_shift && leak_shift <= LEAK_SHIFT_MAX,
+         "leakShift = " + std::to_string(leak_shift) + " must be in 0.." +
+             std::to_string(LEAK_SHIFT_MAX));
+    need(relu || leak_shift == 0, "leakShift must be 0 without relu");
     if (bias) {
         need(bias_addr >= 0 && bias_addr % cols == 0,
              "biasAddr = " + std::to_string(bias_addr) + " must be a multiple of cols (" +

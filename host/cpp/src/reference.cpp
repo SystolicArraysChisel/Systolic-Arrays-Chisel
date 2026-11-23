@@ -52,24 +52,27 @@ Matrix<std::int64_t> matmul_acc(const Matrix<std::int8_t>& a, const Matrix<std::
     return c;
 }
 
-std::int64_t post_process(std::int64_t acc, bool requant, bool relu, int shift) {
+std::int64_t post_process(std::int64_t acc, bool requant, bool relu, int shift, int leak_shift) {
     const std::int64_t y = requant ? requantize(acc, shift) : acc;
-    return relu ? std::max(y, std::int64_t{0}) : y;
+    if (!relu || y >= 0) {
+        return y;
+    }
+    return leak_shift == 0 ? 0 : y >> leak_shift;  // arithmetic shift: floor
 }
 
 Matrix<std::int64_t> post_process(const Matrix<std::int64_t>& acc, bool requant, bool relu,
-                                  int shift) {
+                                  int shift, int leak_shift) {
     Matrix<std::int64_t> result(acc.rows(), acc.cols());
-    std::ranges::transform(acc, result.begin(), [requant, relu, shift](std::int64_t v) {
-        return post_process(v, requant, relu, shift);
+    std::ranges::transform(acc, result.begin(), [=](std::int64_t v) {
+        return post_process(v, requant, relu, shift, leak_shift);
     });
     return result;
 }
 
 Matrix<std::int64_t> matmul_ref(const Matrix<std::int8_t>& a, const Matrix<std::int8_t>& b,
                                 bool requant, bool relu, int shift, int acc_width,
-                                std::span<const std::int32_t> bias) {
-    return post_process(matmul_acc(a, b, acc_width, bias), requant, relu, shift);
+                                std::span<const std::int32_t> bias, int leak_shift) {
+    return post_process(matmul_acc(a, b, acc_width, bias), requant, relu, shift, leak_shift);
 }
 
 }  // namespace tpu_host

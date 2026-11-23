@@ -30,6 +30,14 @@ class RefModelSpec extends AnyFlatSpec {
     assert(RefModel.matmul(a, b, relu = true) == Seq(Seq(12L, 1), Seq(28L, 5), Seq(4L, 0)))
   }
 
+  it should "leak negative values by an arithmetic shift (floor), and only with relu" in {
+    assert(RefModel.postProcess(-9, false, true, 0, leakShift = 2) == -3)
+    assert(RefModel.postProcess(-1, false, true, 0, leakShift = 3) == -1)
+    assert(RefModel.postProcess(-9, false, true, 0) == 0)
+    assert(RefModel.postProcess(9, false, true, 0, leakShift = 2) == 9)
+    assert(RefModel.postProcess(-9, false, false, 0) == -9)
+  }
+
   it should "reject an accumulator overflow" in {
     val a = Seq(Seq.fill(3)(127L))
     val b = Seq.fill(3)(Seq(127L))

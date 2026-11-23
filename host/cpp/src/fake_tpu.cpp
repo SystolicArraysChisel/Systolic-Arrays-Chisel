@@ -140,7 +140,8 @@ void FakeTpu::do_matmul(ByteView f) {
     const int flags = f[19];
     const int shift = f[20];
     const int bias_addr = le16(f, 21);
-    if (shift >= cfg_.acc_width || (flags & ~0b1111) != 0) {
+    if (shift >= cfg_.acc_width || (flags & 0x80) != 0 ||
+        ((flags >> RELU_BIT & 1) == 0 && (flags >> LEAK_SHIFT_BIT & LEAK_SHIFT_MAX) != 0)) {
         error = true;
         return;
     }
@@ -171,7 +172,7 @@ void FakeTpu::do_matmul(ByteView f) {
     }
     const Matrix<std::int64_t> c =
         matmul_ref(a, b, (flags >> REQUANT_BIT & 1) != 0, (flags >> RELU_BIT & 1) != 0, shift,
-                   cfg_.acc_width, col_bias);
+                   cfg_.acc_width, col_bias, flags >> LEAK_SHIFT_BIT & LEAK_SHIFT_MAX);
     // toInput: C goes back into the input memory, keeping the low byte of each
     // element like the hardware (requant has already saturated it to int8).
     const bool to_input = (flags >> TO_INPUT_BIT & 1) != 0;

@@ -5,7 +5,7 @@ import scala.util.Random
 /** Bit-exact model of one MATMUL, the Scala copy of host/tpu_host/reference.py.
   *
   * C = A . B on int8 inputs with an accWidth-bit accumulator, then the
-  * post-processing of the spec: optional requantization, then optional ReLU.
+  * post-processing of the spec: optional requantization, then optional (leaky) ReLU.
   * Matrices are row-major Seq of rows.
   */
 object RefModel {
@@ -29,14 +29,15 @@ object RefModel {
     }
   }
 
-  def postProcess(acc: Long, requant: Boolean, relu: Boolean, shift: Int): Long = {
+  /** ReLU: a negative y becomes y >> leakShift (floor), or 0 if leakShift = 0. */
+  def postProcess(acc: Long, requant: Boolean, relu: Boolean, shift: Int, leakShift: Int = 0): Long = {
     val y = if (requant) Quant.requantize(acc, shift) else acc
-    if (relu) y.max(0) else y
+    if (relu && y < 0) (if (leakShift == 0) 0 else y >> leakShift) else y
   }
 
   def matmul(a: Mat, b: Mat, requant: Boolean = false, relu: Boolean = false, shift: Int = 0,
-             accWidth: Int = 32, bias: Option[Seq[Long]] = None): Mat =
-    matmulAcc(a, b, accWidth, bias).map(_.map(postProcess(_, requant, relu, shift)))
+             accWidth: Int = 32, bias: Option[Seq[Long]] = None, leakShift: Int = 0): Mat =
+    matmulAcc(a, b, accWidth, bias).map(_.map(postProcess(_, requant, relu, shift, leakShift)))
 
   /** Random rows x cols matrix with elements in [lo, hi] (int8 by default). */
   def randomMatrix(rnd: Random, rows: Int, cols: Int, lo: Int = -128, hi: Int = 127): Mat =

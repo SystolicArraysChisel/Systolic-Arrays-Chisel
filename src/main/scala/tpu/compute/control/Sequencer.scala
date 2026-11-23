@@ -50,6 +50,7 @@ class Sequencer(c: SAConfig) extends Module {
   val ldC = RegInit(0.U(c.dimW.W))
   val requant = RegInit(false.B)
   val relu = RegInit(false.B)
+  val leakShift = RegInit(0.U(3.W))
   val toInput = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
   val bias = RegInit(false.B)
@@ -101,6 +102,7 @@ class Sequencer(c: SAConfig) extends Module {
   io.accCtrl.bits.ldC := ldC
   io.accCtrl.bits.m := m
   io.accCtrl.bits.relu := relu
+  io.accCtrl.bits.leakShift := leakShift
   io.accCtrl.bits.requant := requant
   io.accCtrl.bits.shift := shift
   io.accCtrl.bits.toInput := toInput
@@ -136,6 +138,7 @@ class Sequencer(c: SAConfig) extends Module {
         ldC := io.instr.bits.ldC
         requant := io.instr.bits.requant
         relu := io.instr.bits.relu
+        leakShift := io.instr.bits.leakShift
         toInput := io.instr.bits.toInput
         shift := io.instr.bits.shift
         bias := io.instr.bits.bias

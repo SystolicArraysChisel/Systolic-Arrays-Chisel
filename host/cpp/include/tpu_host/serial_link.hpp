@@ -1,5 +1,5 @@
-// The real link: a Windows COM port, 8N1, no flow control. The Win32
-// equivalent of serial.Serial(port, baud, timeout=...).
+// The real link: a serial port (Windows COM port, or termios device on
+// macOS/Linux), 8N1, no flow control.
 #pragma once
 #include <cstddef>
 #include <string>
@@ -11,7 +11,7 @@ namespace tpu_host {
 
 class SerialLink : public Link {
    public:
-    // port: "COM5". Throws std::system_error if it cannot be opened or set up.
+    // port: "COM5", "/dev/cu.usbserial-X" or "/dev/ttyUSB0". Throws std::system_error if it cannot be opened or set up.
     SerialLink(const std::string& port, int baud);
     ~SerialLink() override;  // closes the port
     SerialLink(const SerialLink&) = delete;  // one owner of the port
@@ -23,7 +23,11 @@ class SerialLink : public Link {
     Bytes read(std::size_t n) override;
 
    private:
+#ifdef _WIN32
     void* handle_;  // a Win32 HANDLE; <windows.h> stays in the .cpp
+#else
+    int fd_;
+#endif
 };
 
 }  // namespace tpu_host

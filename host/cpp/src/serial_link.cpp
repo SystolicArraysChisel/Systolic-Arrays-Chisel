@@ -1,5 +1,7 @@
 #include "tpu_host/serial_link.hpp"
 
+#ifdef _WIN32
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN  // skip the rarely used parts of the API
 #endif
@@ -104,3 +106,111 @@ Bytes SerialLink::read(std::size_t n) {
 }
 
 }  // namespace tpu_host
+
+#else  // POSIX (macOS, Linux)
+
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <string>
+#include <system_error>
+#ifdef __APPLE__
+#include <IOKit/serial/ioss.h>  // IOSSIOSPEED: arbitrary baud rates
+#endif
+
+namespace tpu_host {
+
+namespace {
+
+// Throws errno with a readable message, e.g.
+// "cannot open /dev/ttyUSB0: No such file or directory"
+[[noreturn]] void fail(const std::string& what) {
+    throw std::system_error(errno, std::system_category(), what);
+}
+
+}  // namespace
+
+SerialLink::SerialLink(const std::string& port, int baud) {
+    fd_ = ::open(port.c_str(), O_RDWR | O_NOCTTY);
+    if (fd_ < 0) {
+        fail("cannot open " + port);
+    }
+
+    // A throwing constructor never runs the destructor: close the port ourselves.
+    auto close_and_fail = [&](const std::string& what) {
+        const int err = errno;  // close may overwrite it
+        ::close(fd_);
+        errno = err;
+        fail(what + " on " + port);
+    };
+
+    // Raw 8N1, no flow control (0x11 / 0x13 are ordinary data bytes in our frames).
+    termios tio{};
+    if (tcgetattr(fd_, &tio) != 0) {
+        close_and_fail("tcgetattr");
+    }
+    cfmakeraw(&tio);
+    tio.c_cflag |= CLOCAL | CREAD;
+    tio.c_cflag &= ~static_cast<tcflag_t>(CSTOPB | CRTSCTS);
+    // VMIN 0 / VTIME 1: read returns at once with the bytes waiting, or waits
+    // up to 100 ms for a first byte. TpuDriver::recv loops until its own deadline.
+    tio.c_cc[VMIN] = 0;
+    tio.c_cc[VTIME] = 1;
+#ifdef __APPLE__
+    cfsetspeed(&tio, B9600);  // placeholder: the real rate is set by IOSSIOSPEED below
+#else
+    // shortcut: only the two rates the project uses, add a Bxxx case for others
+    if (baud != 115'200 && baud != 2'000'000) {
+        errno = EINVAL;
+        close_and_fail("unsupported baud rate");
+    }
+    cfsetspeed(&tio, baud == 115'200 ? B115200 : B2000000);
+#endif
+    if (tcsetattr(fd_, TCSANOW, &tio) != 0) {
+        close_and_fail("tcsetattr");
+    }
+#ifdef __APPLE__
+    speed_t speed = static_cast<speed_t>(baud);
+    if (ioctl(fd_, IOSSIOSPEED, &speed) != 0) {
+        close_and_fail("IOSSIOSPEED");
+    }
+#endif
+
+    // Drop bytes left over from an earlier run (a reply nobody read).
+    tcflush(fd_, TCIOFLUSH);
+}
+
+SerialLink::~SerialLink() { ::close(fd_); }  // a destructor must not throw
+
+void SerialLink::write(ByteView data) {
+    std::size_t sent = 0;
+    while (sent < data.size()) {
+        const ssize_t n = ::write(fd_, data.data() + sent, data.size() - sent);
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            fail("write");
+        }
+        sent += static_cast<std::size_t>(n);
+    }
+}
+
+Bytes SerialLink::read(std::size_t n) {
+    Bytes buf(n);
+    ssize_t got;
+    while ((got = ::read(fd_, buf.data(), n)) < 0 && errno == EINTR) {
+    }
+    if (got < 0) {
+        fail("read");
+    }
+    buf.resize(static_cast<std::size_t>(got));  // 0 bytes is a timeout, not an error: recv decides
+    return buf;
+}
+
+}  // namespace tpu_host
+
+#endif  // _WIN32

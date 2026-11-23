@@ -15,6 +15,8 @@ cmake --build build
 ./build/tpu_host_tests        # runs without hardware: the board checks are skipped
 ```
 
+On macOS/Linux drop the `-G` option: `cmake -S . -B build && cmake --build build`.
+
 ## Use
 
 ```cpp
@@ -47,8 +49,8 @@ Then, from `host/cpp/`:
 TPU_PORT=COM3 TPU_CONFIG=../../build/4x4/config.json ./build/tpu_host_tests --gtest_filter=Board.*
 ```
 
-The COM port is the "USB Serial Port" the Nexys4 DDR creates (Device Manager,
-FTDI). A `timeout: got 0 of 9 reply bytes` usually means the FPGA is not
+The port is the "USB Serial Port" the Nexys4 DDR creates: `COM3` on Windows
+(Device Manager, FTDI), `/dev/cu.usbserial-*` on macOS, `/dev/ttyUSB*` on Linux. A `timeout: got 0 of 9 reply bytes` usually means the FPGA is not
 programmed.
 
 ## Modules
@@ -62,7 +64,7 @@ programmed.
 | `reference` | bit-exact model of one MATMUL (Scala copy: `tpu.ref.RefModel`) |
 | `link` | `Link`: the byte stream interface below the driver |
 | `fake_tpu` | `FakeTpu`: software stand-in for the FPGA, used by the tests |
-| `serial_link` | `SerialLink`: the Windows COM port |
+| `serial_link` | `SerialLink`: the serial port (Win32 or termios) |
 | `tpu_driver` | `TpuDriver`: WRITE / READ / MATMUL / STATUS, whole products |
 
 ## Reference vectors

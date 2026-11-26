@@ -11,7 +11,7 @@ struct HwConfig {
     int max_m = 64;             // largest m one MATMUL accepts
     int acc_width = 32;         // bits of an accumulator
     int baud = 2'000'000;       // UART speed
-    int clock_hz = 50'000'000;  // core clock (BoardConfig.nexysTpu), to turn cycles into time
+    int clock_hz = 100'000'000;  // core clock (BoardConfig.clockHz), to turn cycles into time
     int rx_fifo_depth = 16;     // bytes RxFifo holds while the decoder is busy
 
     std::string name = "4x4";  // configuration name (EmitBoard.configs)

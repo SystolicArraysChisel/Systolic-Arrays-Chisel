@@ -23,6 +23,7 @@ class Accumulators(c: SAConfig) extends Module {
 
     // Sequencer <-> Accumulators interface
     val ctrl = Flipped(Decoupled(new AccCtrl(c)))
+    val biasWr = Flipped(Valid(new BiasWritePort(c))) // CommandDecoder: BIAS
     val done = Valid(Bool())
 
     // Accumulator <-> UnifiedBuffer interface
@@ -36,9 +37,12 @@ class Accumulators(c: SAConfig) extends Module {
   val ldC = RegInit(0.U(c.dimW.W))
   val m = RegInit(0.U(c.dimW.W))
   val relu = RegInit(false.B)
+  val leakShift = RegInit(0.U(3.W))
   val requant = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
   val toInput = RegInit(false.B) // write the rows into the input memory
+  val bias = RegInit(false.B)
+  val biasAddr = RegInit(0.U(c.biasAddrW.W))
 
   // Control, accumulation, and write phases of the module.
   val sCtrl :: sAccum :: sWrite :: Nil = Enum(3)
@@ -53,6 +57,15 @@ class Accumulators(c: SAConfig) extends Module {
     mem
   }
 
+  // Bias storage: one LUT-RAM bank per column (async read), a row = cols entries.
+  // Only written by BIAS, which the decoder holds while a MATMUL runs.
+  val biasMem = Seq.fill(c.cols)(Mem(c.biasDepth / c.cols, c.accT))
+  for (col <- 0 until c.cols) {
+    when(io.biasWr.valid && (io.biasWr.bits.addr & (c.cols - 1).U) === col.U) {
+      biasMem(col).write(io.biasWr.bits.addr >> c.colBits, io.biasWr.bits.data)
+    }
+  }
+
   // Row counter for incoming rows from the systolic array.
   val rowCounter = RegInit(0.U(c.dimW.W))
 
@@ -65,6 +78,9 @@ class Accumulators(c: SAConfig) extends Module {
   val accumPipeRow = Reg(UInt(c.dimW.W))
   val accumPipeData = Reg(Vec(c.cols, c.accT))
   val accumPipeFirst = RegInit(false.B)
+  // Bias of the row's tile, read at stage 0 (ctrl may already hold the next
+  // tile); used when first.
+  val accumPipeBias = Reg(Vec(c.cols, c.accT))
   val accumPipeLastRow = RegInit(false.B)
   // The row's own tile is the last K-tile: ctrl may already hold the next tile.
   val accumPipeTileLast = RegInit(false.B)
@@ -75,6 +91,9 @@ class Accumulators(c: SAConfig) extends Module {
     accumPipeRow := rowCounter
     accumPipeData := io.in.bits
     accumPipeFirst := first
+    for (col <- 0 until c.cols) {
+      accumPipeBias(col) := Mux(bias, biasMem(col).read(biasAddr >> c.colBits), 0.S)
+    }
     accumPipeLastRow := (rowCounter === m - 1.U)
     accumPipeTileLast := last
   } .otherwise {
@@ -139,7 +158,7 @@ class Accumulators(c: SAConfig) extends Module {
   for (col <- 0 until c.cols) {
     accumWrData(col) := Mux(
       accumPipeFirst,
-      accumPipeData(col),
+      accumPipeData(col) + accumPipeBias(col),
       accumRdData(col) + accumPipeData(col)
     )
   }
@@ -180,7 +199,7 @@ class Accumulators(c: SAConfig) extends Module {
     val processed = Mux(requant, saturated, widenedValue)
     postProcessed(col) := Mux(
       relu,
-      Mux(processed < 0.S, 0.S, processed),
+      Mux(processed < 0.S, Mux(leakShift === 0.U, 0.S, (processed >> leakShift).asSInt), processed),
       processed
     )
   }
@@ -198,9 +217,12 @@ class Accumulators(c: SAConfig) extends Module {
     ldC := io.ctrl.bits.ldC
     m := io.ctrl.bits.m
     relu := io.ctrl.bits.relu
+    leakShift := io.ctrl.bits.leakShift
     requant := io.ctrl.bits.requant
     shift := io.ctrl.bits.shift
     toInput := io.ctrl.bits.toInput
+    bias := io.ctrl.bits.bias
+    biasAddr := io.ctrl.bits.biasAddr
     rowCounter := 0.U
   }
   io.done.valid := false.B

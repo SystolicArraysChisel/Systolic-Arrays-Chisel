@@ -11,7 +11,8 @@ object HostProtocol {
     val Read = 0x02
     val Matmul = 0x03
     val Status = 0x04
-    val all: Seq[Int] = Seq(Write, Read, Matmul, Status)
+    val Bias = 0x05
+    val all: Seq[Int] = Seq(Write, Read, Matmul, Status, Bias)
   }
 
   val FieldBytes = 2 // Bytes of an address, a count or a dimension field.
@@ -28,9 +29,22 @@ object HostProtocol {
       Seq(1, 4) // 1 = low byte (after requant), 4 = full int32
   }
 
+  /** BIAS (0x05): addr, count, then count int32 values, 4 bytes each,
+    * little-endian. Entry addr + i of the bias memory is written with value i.
+    * No reply. Addresses wrap at biasDepth, like WRITE ones at inDepth. A BIAS
+    * frame received while a MATMUL runs waits (nothing is consumed after its
+    * header) until the MATMUL is done, so it never changes a bias in use.
+    * Meanwhile its data bytes wait in RxFifo, so the host should poll STATUS
+    * until busy = 0 before sending BIAS (TpuDriver does), or RxFifo may overrun.
+    */
+  object Bias {
+    val headerBytes: Int = 2 * FieldBytes // addr + count
+    val entryBytes = 4
+  }
+
   /** MATMUL (0x03): start C = A · B, with A of size m×k and B of size k×n.
     *
-    * Frame sent by the host: 1 opcode byte + 20 payload bytes = 21 bytes.
+    * Frame sent by the host: 1 opcode byte + 22 payload bytes = 23 bytes.
     * 2-byte fields are little-endian (low byte first).
     *
     * {{{
@@ -45,9 +59,19 @@ object HostProtocol {
     * 13–14   ldA      distance between two rows of A in the input memory (= k if A is dense)
     * 15–16   ldB      distance between two rows of B in the input memory (= n if B is dense)
     * 17–18   ldC      distance between two rows of C in the result memory (= n if C is dense)
-    * 19      flags    bit 0 = requant, bit 1 = relu, bit 2 = toInput, bits 3–7 = 0
+    * 19      flags    bit 0 = requant, bit 1 = relu, bit 2 = toInput, bit 3 = bias, bits 4–6 = leakShift, bit 7 = 0
     * 20      shift    right shift for requantization (0 to accWidth - 1); ignored if requant = 0
+    * 21–22   biasAddr bias-memory address of the first bias entry; multiple of cols; 0 if bias = 0
     * }}}
+    *
+    * bias starts each accumulator from a bias instead of 0: C[i][j] comes from
+    * the sum A·B + bias[biasAddr + j], wrapped to accWidth bits like the
+    * accumulator, then requantized as usual. Bias entries are loaded with BIAS.
+    *
+    * leakShift (0–7) makes the ReLU leaky: with relu = 1, a negative value x
+    * becomes x >> leakShift (arithmetic shift, rounds toward -infinity) instead
+    * of 0; leakShift = 0 is the plain ReLU. It must be 0 if relu = 0. Unlike a
+    * clamp, the slope 2^-leakShift does not depend on the scale of the data.
     *
     * toInput writes C back into the input memory instead of the result memory,
     * so that it can be the A of the next MATMUL (a layer's output feeding the
@@ -68,7 +92,7 @@ object HostProtocol {
     */
   object Matmul {
     val payloadBytes: Int =
-      9 * FieldBytes + 1 + 1 // 9 two-byte fields + flags + shift = 20
+      10 * FieldBytes + 1 + 1 // 9 two-byte fields + biasAddr + flags + shift = 22
     // byte offsets inside the frame (opcode at offset 0)
     val AAddrOffset = 1
     val BAddrOffset = 3
@@ -81,11 +105,15 @@ object HostProtocol {
     val LdCOffset = 17
     val FlagsOffset = 19
     val ShiftOffset = 20
+    val BiasAddrOffset = 21
     // bit positions inside the flags byte
     val RequantBit = 0
     val ReluBit = 1
     val ToInputBit = 2
-    val usedFlagBits = 3 // bits ToInputBit + 1 to 7 must be 0
+    val BiasBit = 3
+    val LeakShiftBit = 4 // bits 4 to 6
+    val LeakShiftWidth = 3
+    val usedFlagBits = 7 // bit 7 must be 0
   }
 
   /** STATUS: ask whether the accelerator is busy and how long the last MATMUL

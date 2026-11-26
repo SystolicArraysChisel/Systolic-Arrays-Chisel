@@ -33,6 +33,7 @@ Bytes take_front(Bytes& buf, std::size_t n) {
 FakeTpu::FakeTpu(HwConfig cfg, int busy_polls)
     : inp(static_cast<std::size_t>(cfg.in_depth)),
       res(static_cast<std::size_t>(cfg.out_depth)),
+      bias(static_cast<std::size_t>(cfg.bias_depth)),
       cfg_(std::move(cfg)),
       busy_polls_(busy_polls) {}
 
@@ -53,6 +54,12 @@ void FakeTpu::process() {
                     return;  // count not known yet
                 }
                 len = 5 + static_cast<std::size_t>(le16(rx_, 3));
+                break;
+            case Op::Bias:
+                if (rx_.size() < 5) {
+                    return;  // count not known yet
+                }
+                len = 5 + 4 * static_cast<std::size_t>(le16(rx_, 3));
                 break;
             case Op::Read:
                 len = 6;
@@ -77,6 +84,9 @@ void FakeTpu::process() {
             case Op::Write:
                 do_write(frame);
                 break;
+            case Op::Bias:
+                do_bias(frame);
+                break;
             case Op::Read:
                 do_read(frame);
                 break;
@@ -95,6 +105,16 @@ void FakeTpu::do_write(ByteView f) {
     for (std::size_t i = 5; i < f.size(); ++i) {
         const auto at = static_cast<std::size_t>(addr + static_cast<int>(i - 5)) % inp.size();
         inp[at] = static_cast<std::int8_t>(f[i]);
+    }
+}
+
+void FakeTpu::do_bias(ByteView f) {
+    const int addr = le16(f, 1);
+    for (std::size_t i = 0; 5 + 4 * i < f.size(); ++i) {
+        const std::size_t at = 5 + 4 * i;
+        const std::uint32_t v = static_cast<std::uint32_t>(f[at] | f[at + 1] << 8 | f[at + 2] << 16) |
+                                static_cast<std::uint32_t>(f[at + 3]) << 24;
+        bias[(static_cast<std::size_t>(addr) + i) % bias.size()] = static_cast<std::int32_t>(v);
     }
 }
 
@@ -119,7 +139,9 @@ void FakeTpu::do_matmul(ByteView f) {
     const int ld_a = le16(f, 13), ld_b = le16(f, 15), ld_c = le16(f, 17);
     const int flags = f[19];
     const int shift = f[20];
-    if (shift >= cfg_.acc_width || (flags & ~0b111) != 0) {
+    const int bias_addr = le16(f, 21);
+    if (shift >= cfg_.acc_width || (flags & 0x80) != 0 ||
+        ((flags >> RELU_BIT & 1) == 0 && (flags >> LEAK_SHIFT_BIT & LEAK_SHIFT_MAX) != 0)) {
         error = true;
         return;
     }
@@ -142,9 +164,15 @@ void FakeTpu::do_matmul(ByteView f) {
         }
     }
 
+    std::vector<std::int32_t> col_bias;
+    if ((flags >> BIAS_BIT & 1) != 0) {
+        for (int j = 0; j < n; ++j) {
+            col_bias.push_back(bias[static_cast<std::size_t>(bias_addr + j) % bias.size()]);
+        }
+    }
     const Matrix<std::int64_t> c =
         matmul_ref(a, b, (flags >> REQUANT_BIT & 1) != 0, (flags >> RELU_BIT & 1) != 0, shift,
-                   cfg_.acc_width);
+                   cfg_.acc_width, col_bias, flags >> LEAK_SHIFT_BIT & LEAK_SHIFT_MAX);
     // toInput: C goes back into the input memory, keeping the low byte of each
     // element like the hardware (requant has already saturated it to int8).
     const bool to_input = (flags >> TO_INPUT_BIT & 1) != 0;

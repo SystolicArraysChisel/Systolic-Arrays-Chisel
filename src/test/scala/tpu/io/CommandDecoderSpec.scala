@@ -56,11 +56,36 @@ class CommandDecoderSpec extends AnyFlatSpec with ChiselScalatestTester {
     withBench() { (_, t) =>
       // 2 N tiles of 2 K tiles each; every field shows up in the tile commands
       val mm = Matmul(aAddr = 0x100, bAddr = 0x204, cAddr = 0x308, m = 33, k = 8, n = 8,
-        ldA = 0x1234, ldB = 0x0abc, ldC = 0xfff0, flags = 0x03, shift = 31)
+        ldA = 0x1234, ldB = 0x0abc, ldC = 0xfff0, flags = 0x5b, shift = 31, biasAddr = 0x44)
       t.send(mm.bytes)
       t.drain()
       assert(t.tiles == Tiles.expected(mm, c))
       assert(t.tilesDone == 4)
+    }
+  }
+
+  it should "write the int32 entries of a BIAS frame, 4 bytes little-endian each" in {
+    withBench() { (_, t) =>
+      val data = Seq(0, 1, -1, 0x12345678, Int.MinValue, 0x7fffffff)
+      t.send(bias(0x20, data) ++ bias(5, Seq()))
+      t.drain()
+      assert(t.biasWrites == data.zipWithIndex.map { case (d, i) => (0x20 + i, d) })
+      assert(t.received.isEmpty && t.tileCmds.isEmpty)
+      assert(!t.status().error)
+    }
+  }
+
+  it should "hold a BIAS frame while a MATMUL runs, then write it" in {
+    withBench() { (_, t) =>
+      t.holdTiles = true
+      t.send(Matmul(m = 2).bytes ++ bias(8, Seq(7, 9)) ++ status)
+      t.run(500)
+      assert(t.biasWrites.isEmpty, "the bias memory is in use")
+      assert(t.toSend.length == 4 * 2 + 1, "the data bytes and STATUS are not consumed")
+      t.holdTiles = false
+      t.drain()
+      assert(t.biasWrites == Seq((8, 7), (9, 9)))
+      assert(!parseStatus(t.received.toSeq).error, "the wait is not a timeout")
     }
   }
 
@@ -98,7 +123,8 @@ class CommandDecoderSpec extends AnyFlatSpec with ChiselScalatestTester {
       "unknown opcode" -> Seq(0x99),
       "READ size 2" -> read(0, 3, 2),
       "MATMUL shift 32" -> Matmul(shift = 32).bytes,
-      "MATMUL flag bit 3" -> Matmul(flags = 0x08).bytes
+      "MATMUL leakShift without relu" -> Matmul(flags = 0x10).bytes,
+      "MATMUL flag bit 7" -> Matmul(flags = 0x80).bytes
     )
     for ((name, frame) <- invalid) withBench() { (dut, t) =>
       dut.io.error.expect(false.B)

@@ -19,7 +19,7 @@ std::string shape(std::size_t rows, std::size_t cols) {
 }  // namespace
 
 Matrix<std::int64_t> matmul_acc(const Matrix<std::int8_t>& a, const Matrix<std::int8_t>& b,
-                                int acc_width) {
+                                int acc_width, std::span<const std::int32_t> bias) {
     if (a.cols() != b.rows()) {
         throw std::invalid_argument("cannot multiply " + shape(a.rows(), a.cols()) + " by " +
                                     shape(b.rows(), b.cols()));
@@ -39,29 +39,40 @@ Matrix<std::int64_t> matmul_acc(const Matrix<std::int8_t>& a, const Matrix<std::
                 throw std::overflow_error("a sum does not fit in " + std::to_string(acc_width) +
                                           " bits");
             }
+            if (!bias.empty()) {
+                // Wrap to acc_width bits (sign-extend the low bits).
+                const int unused = 64 - acc_width;
+                sum = static_cast<std::int64_t>(static_cast<std::uint64_t>(sum + bias[j])
+                                                << unused) >>
+                      unused;
+            }
             c(i, j) = sum;
         }
     }
     return c;
 }
 
-std::int64_t post_process(std::int64_t acc, bool requant, bool relu, int shift) {
+std::int64_t post_process(std::int64_t acc, bool requant, bool relu, int shift, int leak_shift) {
     const std::int64_t y = requant ? requantize(acc, shift) : acc;
-    return relu ? std::max(y, std::int64_t{0}) : y;
+    if (!relu || y >= 0) {
+        return y;
+    }
+    return leak_shift == 0 ? 0 : y >> leak_shift;  // arithmetic shift: floor
 }
 
 Matrix<std::int64_t> post_process(const Matrix<std::int64_t>& acc, bool requant, bool relu,
-                                  int shift) {
+                                  int shift, int leak_shift) {
     Matrix<std::int64_t> result(acc.rows(), acc.cols());
-    std::ranges::transform(acc, result.begin(), [requant, relu, shift](std::int64_t v) {
-        return post_process(v, requant, relu, shift);
+    std::ranges::transform(acc, result.begin(), [=](std::int64_t v) {
+        return post_process(v, requant, relu, shift, leak_shift);
     });
     return result;
 }
 
 Matrix<std::int64_t> matmul_ref(const Matrix<std::int8_t>& a, const Matrix<std::int8_t>& b,
-                                bool requant, bool relu, int shift, int acc_width) {
-    return post_process(matmul_acc(a, b, acc_width), requant, relu, shift);
+                                bool requant, bool relu, int shift, int acc_width,
+                                std::span<const std::int32_t> bias, int leak_shift) {
+    return post_process(matmul_acc(a, b, acc_width, bias), requant, relu, shift, leak_shift);
 }
 
 }  // namespace tpu_host

@@ -21,6 +21,7 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.in.valid.poke(false.B)
     dut.io.ctrl.valid.poke(false.B)
     dut.io.resWr.ready.poke(true.B)
+    dut.io.biasWr.valid.poke(false.B)
 
     // Reset the DUT.
     dut.reset.poke(true.B)
@@ -38,7 +39,10 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       m: Int,
       requant: Boolean = false,
       shift: Int = 0,
-      relu: Boolean = false
+      relu: Boolean = false,
+      bias: Boolean = false,
+      biasAddr: Int = 0,
+      leakShift: Int = 0
   ): Unit = {
     dut.io.ctrl.bits.first.poke(first.B)
     dut.io.ctrl.bits.last.poke(last.B)
@@ -48,7 +52,10 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.ctrl.bits.requant.poke(requant.B)
     dut.io.ctrl.bits.shift.poke(shift.U)
     dut.io.ctrl.bits.relu.poke(relu.B)
+    dut.io.ctrl.bits.leakShift.poke(leakShift.U)
     dut.io.ctrl.bits.toInput.poke(false.B)
+    dut.io.ctrl.bits.bias.poke(bias.B)
+    dut.io.ctrl.bits.biasAddr.poke(biasAddr.U)
 
     dut.io.ctrl.valid.poke(true.B)
     dut.io.ctrl.ready.expect(true.B)
@@ -185,6 +192,30 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       )
       sendRows(dut, Seq(Seq(40, -40), Seq(-1, 100)), last = true)
       readWrites(dut, Seq(0 -> Seq(10, 0), 1 -> Seq(0, 25)))
+    }
+  }
+
+  it should "scale negative values by 2^-leakShift (floor) with leaky ReLU, with and without requantization" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+
+      // leakShift = 2, no requant: -9 >> 2 = -3 (floor of -2.25), -4 >> 2 = -1, 15 is unchanged
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 2,
+        relu = true, leakShift = 2
+      )
+      sendRows(dut, Seq(Seq(15, -9), Seq(-4, 45)), last = true)
+      readWrites(dut, Seq(0 -> Seq(15, -3), 1 -> Seq(-1, 45)))
+
+      // requant shift = 2, leakShift = 1: (-37 + 2) >> 2 = -9, then -9 >> 1 = -5 (floor of -4.5)
+      sendControl(
+        dut, first = true, last = true,
+        cAddr = 0, ldC = 2, m = 1,
+        requant = true, shift = 2, relu = true, leakShift = 1
+      )
+      sendRows(dut, Seq(Seq(-37, 40)), last = true)
+      readWrites(dut, Seq(0 -> Seq(-5, 10)))
     }
   }
 
@@ -356,6 +387,8 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.ctrl.bits.shift.poke(0.U)
       dut.io.ctrl.bits.relu.poke(false.B)
       dut.io.ctrl.bits.toInput.poke(false.B)
+      dut.io.ctrl.bits.bias.poke(false.B)
+      dut.io.ctrl.bits.biasAddr.poke(0.U)
       dut.io.ctrl.valid.poke(true.B)
     }
     pokeCtrl(0)
@@ -398,5 +431,44 @@ class AccumulatorsSpec extends AnyFlatSpec with ChiselScalatestTester {
       readWrites(dut, Seq(0 -> Seq(111, 218)))
     }
   }
-}
 
+  private def writeBias(dut: Accumulators, addr: Int, value: Int): Unit = {
+    dut.io.biasWr.valid.poke(true.B)
+    dut.io.biasWr.bits.addr.poke(addr.U)
+    dut.io.biasWr.bits.data.poke(value.S)
+    dut.clock.step()
+    dut.io.biasWr.valid.poke(false.B)
+  }
+
+  it should "start from the bias on the first K-tile only, with bias at an offset address" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+      Seq(100, 200, 1000, -1000).zipWithIndex.foreach { case (v, a) => writeBias(dut, a, v) }
+
+      // biasAddr = 2 selects the entries 1000 and -1000, added once.
+      sendControl(dut, first = true, last = false, cAddr = 0, ldC = 4, m = 2, bias = true, biasAddr = 2)
+      sendRows(dut, Seq(Seq(1, 2), Seq(3, 4)), last = false)
+      sendControl(dut, first = false, last = true, cAddr = 0, ldC = 4, m = 2, bias = true, biasAddr = 2)
+      sendRows(dut, Seq(Seq(10, 20), Seq(-3, 6)), last = true)
+      readWrites(dut, Seq(0 -> Seq(1011, -978), 2 -> Seq(1000, -990)))
+    }
+  }
+
+  it should "add the bias before requantization and wrap in accWidth" in {
+    test(new Accumulators(config)) { dut =>
+      initialize(dut)
+      writeBias(dut, 0, 64)
+      writeBias(dut, 1, -2000)
+      sendControl(dut, first = true, last = true, cAddr = 0, ldC = 2, m = 1,
+        requant = true, shift = 1, bias = true)
+      sendRows(dut, Seq(Seq(10, 1000)), last = true)
+      readWrites(dut, Seq(0 -> Seq(37, -127)))
+
+      // Int.MaxValue + 1 wraps to Int.MinValue, as in the accumulator.
+      writeBias(dut, 0, 1)
+      sendControl(dut, first = true, last = true, cAddr = 0, ldC = 2, m = 1, bias = true)
+      sendRows(dut, Seq(Seq(Int.MaxValue, 0)), last = true)
+      readWrites(dut, Seq(0 -> Seq(Int.MinValue, -2000)))
+    }
+  }
+}

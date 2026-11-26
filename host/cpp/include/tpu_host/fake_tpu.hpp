@@ -26,6 +26,7 @@ class FakeTpu : public Link {
     // Public so tests can preload and inspect them.
     std::vector<std::int8_t> inp;   // input memory, cfg.in_depth entries
     std::vector<std::int64_t> res;  // result memory, cfg.out_depth entries
+    std::vector<std::int32_t> bias;  // bias memory, cfg.bias_depth entries
     bool error = false;
     bool overrun = false;
     std::uint32_t cycles = 0;
@@ -42,6 +43,7 @@ class FakeTpu : public Link {
     void process();
     void do_write(ByteView f);
     void do_read(ByteView f);
+    void do_bias(ByteView f);
     void do_matmul(ByteView f);
     void do_status();
 };

@@ -50,8 +50,11 @@ class Sequencer(c: SAConfig) extends Module {
   val ldC = RegInit(0.U(c.dimW.W))
   val requant = RegInit(false.B)
   val relu = RegInit(false.B)
+  val leakShift = RegInit(0.U(3.W))
   val toInput = RegInit(false.B)
   val shift = RegInit(0.U(c.shiftW.W))
+  val bias = RegInit(false.B)
+  val biasAddr = RegInit(0.U(c.biasAddrW.W))
 
   // Offsets identify the current tile within the K and N dimensions.
   val nOff = RegInit(0.U(c.dimW.W))
@@ -99,9 +102,12 @@ class Sequencer(c: SAConfig) extends Module {
   io.accCtrl.bits.ldC := ldC
   io.accCtrl.bits.m := m
   io.accCtrl.bits.relu := relu
+  io.accCtrl.bits.leakShift := leakShift
   io.accCtrl.bits.requant := requant
   io.accCtrl.bits.shift := shift
   io.accCtrl.bits.toInput := toInput
+  io.accCtrl.bits.bias := bias
+  io.accCtrl.bits.biasAddr := biasAddr + nOff
 
   io.tileCmd.valid := (state === sIssue) && !cmdSent
   // Advance operand A by the K offset; bTileAddr already tracks the current B tile.
@@ -132,8 +138,11 @@ class Sequencer(c: SAConfig) extends Module {
         ldC := io.instr.bits.ldC
         requant := io.instr.bits.requant
         relu := io.instr.bits.relu
+        leakShift := io.instr.bits.leakShift
         toInput := io.instr.bits.toInput
         shift := io.instr.bits.shift
+        bias := io.instr.bits.bias
+        biasAddr := io.instr.bits.biasAddr
 
         kOff := 0.U
         nOff := 0.U

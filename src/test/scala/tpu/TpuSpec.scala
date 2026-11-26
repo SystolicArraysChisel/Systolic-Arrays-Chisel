@@ -48,6 +48,12 @@ abstract class Host(c: SAConfig) {
     receive(0)
   }
 
+  /** BIAS: write int32 entries addr, addr + 1, ... of the bias memory. */
+  def writeBias(addr: Int, data: Seq[Long]): Unit = {
+    send(HostFrames.bias(addr, data.map(_.toInt)))
+    receive(0)
+  }
+
   /** READ `count` elements of `size` bytes, as signed values. */
   def read(addr: Int, count: Int, size: Int): Seq[Long] = {
     send(HostFrames.read(addr, count, size))
@@ -65,7 +71,8 @@ abstract class Host(c: SAConfig) {
     * the m x n result and the last STATUS.
     */
   def matmul(a: Mat, b: Mat, requant: Boolean = false, relu: Boolean = false,
-             shift: Int = 0): (Mat, HostFrames.StatusReply) = {
+             shift: Int = 0, bias: Option[Seq[Long]] = None,
+             biasAddr: Int = 0, leakShift: Int = 0): (Mat, HostFrames.StatusReply) = {
     val (m, k, n) = (a.length, b.length, b.head.length)
     val (kp, np) = (roundUp(k, c.banks), roundUp(n, c.banks))
     val aFlat = a.flatMap(_.padTo(kp, 0L))
@@ -75,8 +82,10 @@ abstract class Host(c: SAConfig) {
     write(aAddr, aFlat)
     write(bAddr, bFlat)
 
-    val flags = (if (requant) 1 else 0) | (if (relu) 2 else 0)
-    send(HostFrames.Matmul(aAddr, bAddr, 0, m, kp, np, kp, np, np, flags, shift).bytes)
+    bias.foreach(v => writeBias(biasAddr, v.padTo(np, 0L)))
+    val flags = (if (requant) 1 else 0) | (if (relu) 2 else 0) | (if (bias.isDefined) 8 else 0) |
+      (leakShift << HostProtocol.Matmul.LeakShiftBit)
+    send(HostFrames.Matmul(aAddr, bAddr, 0, m, kp, np, kp, np, np, flags, shift, biasAddr).bytes)
     var st = status()
     while (st.busy) st = status()
 
@@ -166,9 +175,10 @@ class TpuSpec extends AnyFlatSpec with ChiselScalatestTester {
     }
 
   def check(host: Host, a: Mat, bm: Mat, requant: Boolean = false, relu: Boolean = false,
-            shift: Int = 0): HostFrames.StatusReply = {
-    val (got, st) = host.matmul(a, bm, requant, relu, shift)
-    assert(got == RefModel.matmul(a, bm, requant, relu, shift),
+            shift: Int = 0, bias: Option[Seq[Long]] = None,
+            biasAddr: Int = 0, leakShift: Int = 0): HostFrames.StatusReply = {
+    val (got, st) = host.matmul(a, bm, requant, relu, shift, bias, biasAddr, leakShift)
+    assert(got == RefModel.matmul(a, bm, requant, relu, shift, bias = bias, leakShift = leakShift),
       s"${a.length}x${bm.length}x${bm.head.length} requant=$requant relu=$relu shift=$shift")
     assert(!st.error && !st.overrun, s"STATUS after MATMUL: $st")
     st
@@ -224,6 +234,60 @@ class TpuSpec extends AnyFlatSpec with ChiselScalatestTester {
       check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 4), requant = true,
         relu = true, shift = 7)
       check(host, RefModel.randomMatrix(rnd, 3, 4), RefModel.randomMatrix(rnd, 4, 4))
+    }
+  }
+
+  it should "apply a leaky ReLU: requant on and off, with a bias, several tiles" in {
+    withCore { host =>
+      val rnd = new Random(11)
+      check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 12), requant = true, relu = true,
+        shift = 8, leakShift = 3)
+      check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 12), relu = true, leakShift = 5)
+      check(host, RefModel.randomMatrix(rnd, 3, 4), RefModel.randomMatrix(rnd, 4, 6), requant = true, relu = true,
+        shift = 6, bias = Some(RefModel.randomMatrix(rnd, 1, 6, -500, 500).head), leakShift = 7)
+    }
+  }
+
+  it should "start from the bias: several N and K tiles, requant on and off, bias at an offset" in {
+    withCore { host =>
+      val rnd = new Random(7)
+      def bias(n: Int, lo: Int, hi: Int) = Some(RefModel.randomMatrix(rnd, 1, n, lo, hi).head)
+      // 12 columns = 3 N tiles, k = 8 = 2 K tiles
+      check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 12), bias = bias(12, -50000, 50000))
+      check(host, RefModel.randomMatrix(rnd, 6, 8), RefModel.randomMatrix(rnd, 8, 12), requant = true, relu = true,
+        shift = 9, bias = bias(12, -50000, 50000), biasAddr = 8)
+      // padded columns (n = 6 -> 8) and a single row; a bias of 0 is the same as none
+      check(host, RefModel.randomMatrix(rnd, 1, 4), RefModel.randomMatrix(rnd, 4, 6), requant = true, shift = 3,
+        bias = bias(6, -100, 100))
+      check(host, RefModel.randomMatrix(rnd, 3, 4), RefModel.randomMatrix(rnd, 4, 4))
+    }
+  }
+
+  it should "wrap acc + bias in the accumulator width" in {
+    withCore { host =>
+      val big = Seq.fill(4)(Int.MaxValue.toLong)
+      val (got, _) = host.matmul(Seq(Seq(1L, 1L, 1L, 1L)), Seq.fill(4)(Seq.fill(4)(1L)), bias = Some(big))
+      assert(got == Seq(Seq.fill(4)(4L + Int.MaxValue - (1L << 32))))
+    }
+  }
+
+  it should "keep using the old bias for a running MATMUL when a BIAS follows at once" in {
+    withCore { host =>
+      val rnd = new Random(8)
+      val (a, bm) = (RefModel.randomMatrix(rnd, 20, 8), RefModel.randomMatrix(rnd, 8, 8))
+      val (old, new_) = (Seq.fill(8)(1000L), Seq.fill(8)(-7L))
+      host.write(0, a.flatten)
+      host.write(160, bm.flatten)
+      host.writeBias(0, old)
+      host.send(HostFrames.Matmul(0, 160, 0, 20, 8, 8, 8, 8, 8, flags = 8).bytes)
+      host.send(HostFrames.bias(0, new_.map(_.toInt))) // held by the decoder until the MATMUL is done
+      var st = host.status()
+      while (st.busy) st = host.status()
+      assert(host.read(0, 160, 4).grouped(8).toSeq == RefModel.matmul(a, bm, bias = Some(old)))
+      host.send(HostFrames.Matmul(0, 160, 0, 20, 8, 8, 8, 8, 8, flags = 8).bytes)
+      st = host.status()
+      while (st.busy) st = host.status()
+      assert(host.read(0, 160, 4).grouped(8).toSeq == RefModel.matmul(a, bm, bias = Some(new_)))
     }
   }
 

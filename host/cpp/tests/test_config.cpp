@@ -22,6 +22,7 @@ TEST(Config, LoadsEveryField) {
     EXPECT_EQ(cfg.banks(), 8);
     EXPECT_EQ(cfg.in_depth, 4096);
     EXPECT_EQ(cfg.out_depth, 4096);
+    EXPECT_EQ(cfg.bias_depth, 128);
     EXPECT_EQ(cfg.max_m, 64);
     EXPECT_EQ(cfg.acc_width, 32);
     EXPECT_EQ(cfg.baud, 2'000'000);

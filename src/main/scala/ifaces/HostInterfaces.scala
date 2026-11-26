@@ -32,6 +32,16 @@ class BufReadReq(c: SAConfig) extends Bundle {
   val addr = UInt(c.outAddrW.W) // Element address in the result memory
 }
 
+/** One bias entry written by the decoder (BIAS command), into the bias memory
+  * of the accumulators.
+  *
+  * Used as Valid(new BiasWritePort(c)).
+  */
+class BiasWritePort(c: SAConfig) extends Bundle {
+  val addr = UInt(c.biasAddrW.W) // Entry address in the bias memory
+  val data = c.accT // The bias (int32)
+}
+
 /** One MATMUL instruction, from the decoder to the sequencer: C = A · B with A
   * m×k, B k×n.
   *
@@ -65,11 +75,16 @@ class Instruction(c: SAConfig) extends Bundle {
 
   val relu = Bool() // Apply ReLU after requantization.
 
+  val leakShift = UInt(3.W) // Leaky ReLU: negative values become x >> leakShift (0 = plain ReLU); needs relu
+
   val toInput = Bool() // Write C into the input memory (as the next A) instead of the result memory; needs requant
 
   val shift = UInt(
     c.shiftW.W
   ) // Right shift used by requantization; ignored if requant is false.
+
+  val bias = Bool() // Start the accumulators from the bias memory instead of 0
+  val biasAddr = UInt(c.biasAddrW.W) // Bias-memory address of the first entry (multiple of cols)
 }
 
 /** State and performance counters of the sequencer, read by the decoder on

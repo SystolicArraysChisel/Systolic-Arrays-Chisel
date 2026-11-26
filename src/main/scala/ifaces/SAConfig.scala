@@ -25,6 +25,8 @@ case class SAConfig(
       4096, // Number of inT elements the input memory holds (A and B together)
     outDepth: Int =
       4096, // Number of accT words the result memory holds (C). Separate from the input memory.
+    biasDepth: Int =
+      256, // Number of int32 bias entries (one per output column, shared by all MATMULs)
     maxM: Int =
       64 /* Depth of the accumulator memory (the Accumulators block below the array), in rows of C.
        * Partial sums of every row of C are stored there between K-tiles, so one MATMUL
@@ -52,6 +54,8 @@ case class SAConfig(
     outDepth
   ) // Bits of an element address in the result memory.
   val outRowAddrW: Int = outAddrW - colBits; // Bits of a row address inside the result memory.
+
+  val biasAddrW: Int = log2Ceil(biasDepth) // Bits of a bias entry address
 
   /* Bits of a C address. C goes to the result memory, or back to the input
    * memory when a MATMUL writes back (toInput), so a C address must reach both. */
@@ -137,6 +141,14 @@ case class SAConfig(
   require(
     outAddrW <= 16,
     s"outDepth = $outDepth needs $outAddrW address bits, but addresses are 2 bytes in the host protocol"
+  )
+  require(
+    isPow2(biasDepth) && biasDepth % cols == 0,
+    s"biasDepth ($biasDepth) must be a power of two and a multiple of cols ($cols)"
+  )
+  require(
+    biasAddrW <= 16,
+    s"biasDepth = $biasDepth needs $biasAddrW address bits, but addresses are 2 bytes in the host protocol"
   )
   require(
     shiftW <= 8,

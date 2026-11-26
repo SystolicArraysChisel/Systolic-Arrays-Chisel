@@ -57,19 +57,19 @@ TEST(Protocol, MatmulFrameFollowsTheByteTable) {
     // Every field has distinct bytes, so a swapped pair or byte order shows up.
     const Matmul mm{.a_addr = 0x0102, .b_addr = 0x0304, .c_addr = 0x0506, .m = 0x0708,
                     .k = 0x090a, .n = 0x0b0c, .ld_a = 0x0d0e, .ld_b = 0x0f10, .ld_c = 0x1112,
-                    .requant = true, .relu = true, .shift = 9};
+                    .requant = true, .relu = true, .shift = 9, .bias = true, .bias_addr = 0x1314};
     const Bytes f = mm.frame();
     ASSERT_EQ(f.size(), MATMUL_FRAME_BYTES);
     EXPECT_EQ(f[0], static_cast<std::uint8_t>(Op::Matmul));
     const std::vector<std::pair<std::size_t, int>> fields = {
         {1, 0x0102},  {3, 0x0304},  {5, 0x0506},  {7, 0x0708},  {9, 0x090a},
-        {11, 0x0b0c}, {13, 0x0d0e}, {15, 0x0f10}, {17, 0x1112},
+        {11, 0x0b0c}, {13, 0x0d0e}, {15, 0x0f10}, {17, 0x1112}, {21, 0x1314},
     };
     for (const auto& [off, value] : fields) {
         SCOPED_TRACE("offset " + std::to_string(off));
         EXPECT_EQ(f[off] | f[off + 1] << 8, value);  // low byte first
     }
-    EXPECT_EQ(f[19], 0b11);  // requant and relu
+    EXPECT_EQ(f[19], 0b1011);  // requant, relu and bias
     EXPECT_EQ(f[20], 9);     // shift
 }
 
@@ -78,8 +78,22 @@ TEST(Protocol, MatmulFrameReference) {
                     .ld_a = 8, .ld_b = 12, .ld_c = 12, .requant = true, .relu = true,
                     .shift = 7};
     const Bytes expected{0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x04, 0x00, 0x08, 0x00,
-                         0x0c, 0x00, 0x08, 0x00, 0x0c, 0x00, 0x0c, 0x00, 0x03, 0x07};
+                         0x0c, 0x00, 0x08, 0x00, 0x0c, 0x00, 0x0c, 0x00, 0x03, 0x07, 0x00, 0x00};
     EXPECT_EQ(mm.frame(), expected);
+}
+
+TEST(Protocol, BiasFrameIsInt32LittleEndian) {
+    const std::vector<std::int32_t> data{1, -2, 0x12345678};
+    EXPECT_EQ(bias_frame(0x0102, data),
+              (Bytes{0x05, 0x02, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF,
+                     0x78, 0x56, 0x34, 0x12}));
+}
+
+TEST(Protocol, MatmulFrameSetsTheLeakShiftBits) {
+    Matmul mm = dense();
+    mm.relu = true;
+    mm.leak_shift = 5;
+    EXPECT_EQ(mm.frame()[19], 0b1010010);  // relu, leakShift = 5 in bits 4-6
 }
 
 TEST(Protocol, MatmulFrameSetsTheToInputBit) {
@@ -151,6 +165,34 @@ TEST(MatmulCheck, RejectsBrokenGuarantees) {
         SCOPED_TRACE(c.reason);
         EXPECT_THAT([&c] { c.mm.check(CFG); }, ThrowsMessage<ProtocolError>(HasSubstr(c.reason)));
     }
+}
+
+TEST(MatmulCheck, BiasRules) {
+    Matmul mm = dense();
+    mm.bias = true;
+    mm.bias_addr = CFG.bias_depth - 4;  // the last 4 entries: exactly fits
+    EXPECT_NO_THROW(mm.check(CFG));
+    mm.bias_addr = 2;
+    EXPECT_THAT([&mm] { mm.check(CFG); }, ThrowsMessage<ProtocolError>(HasSubstr("biasAddr")));
+    mm.bias_addr = CFG.bias_depth;
+    EXPECT_THAT([&mm] { mm.check(CFG); },
+                ThrowsMessage<ProtocolError>(HasSubstr("bias entries do not fit")));
+    mm.bias = false;
+    EXPECT_THAT([&mm] { mm.check(CFG); },
+                ThrowsMessage<ProtocolError>(HasSubstr("biasAddr must be 0")));
+}
+
+TEST(MatmulCheck, LeakShiftRules) {
+    Matmul mm = dense();
+    mm.relu = true;
+    mm.leak_shift = 7;
+    EXPECT_NO_THROW(mm.check(CFG));
+    mm.leak_shift = 8;
+    EXPECT_THAT([&mm] { mm.check(CFG); }, ThrowsMessage<ProtocolError>(HasSubstr("leakShift")));
+    mm.leak_shift = 1;
+    mm.relu = false;
+    EXPECT_THAT([&mm] { mm.check(CFG); },
+                ThrowsMessage<ProtocolError>(HasSubstr("leakShift must be 0")));
 }
 
 // dense() with C written back into the input memory, after B (which ends at 96).

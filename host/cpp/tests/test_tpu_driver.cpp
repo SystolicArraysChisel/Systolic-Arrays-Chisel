@@ -147,6 +147,34 @@ TEST(TpuDriver, ChainsTwoLayersWithoutReadingTheHiddenLayer) {
     EXPECT_EQ(std::count(fake->ops.begin(), fake->ops.end(), Op::Read), 1);
 }
 
+TEST(TpuDriver, WriteBiasThenMatmulWithBias) {
+    auto [fake, tpu] = make(/*busy_polls=*/1);
+    std::mt19937 rng(9);
+    const Matrix<std::int8_t> a = random_int8(rng, 5, 8);
+    const Matrix<std::int8_t> b = random_int8(rng, 8, 12);
+    const std::vector<std::int32_t> bias{1, -2, 3, -4, 50000, -50000, 7, 8, 9, 10, 11, 12};
+    tpu.write(0, a.data());
+    tpu.write(40, b.data());
+    tpu.write_bias(4, bias);
+    EXPECT_EQ(fake->bias[4], 1);
+    EXPECT_EQ(fake->bias[15], 12);
+    tpu.run(Matmul{.a_addr = 0, .b_addr = 40, .c_addr = 0, .m = 5, .k = 8, .n = 12, .ld_a = 8,
+                   .ld_b = 12, .ld_c = 12, .requant = true, .relu = true, .shift = 6,
+                   .bias = true, .bias_addr = 4});
+    EXPECT_EQ(tpu.read(0, 60, 1), matmul_ref(a, b, true, true, 6, 32, bias).data());
+    tpu.run(Matmul{.a_addr = 0, .b_addr = 40, .c_addr = 0, .m = 5, .k = 8, .n = 12, .ld_a = 8,
+                   .ld_b = 12, .ld_c = 12, .bias = true, .bias_addr = 4});
+    EXPECT_EQ(tpu.read(0, 60, 4), matmul_ref(a, b, false, false, 0, 32, bias).data());
+}
+
+TEST(TpuDriver, WriteBiasRefusesOutsideTheBiasMemory) {
+    auto [fake, tpu] = make();
+    const std::vector<std::int32_t> two{1, 2};
+    EXPECT_THROW(tpu.write_bias(255, two), ProtocolError);
+    EXPECT_THROW(tpu.write_bias(-1, two), ProtocolError);
+    EXPECT_TRUE(fake->ops.empty());  // nothing sent
+}
+
 TEST(TpuDriver, RefusesOutsideTheMemory) {
     auto [fake, tpu] = make();
     const std::vector<std::int8_t> two{1, 2};

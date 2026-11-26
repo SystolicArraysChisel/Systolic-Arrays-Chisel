@@ -20,6 +20,10 @@ object HostFrames {
   def read(addr: Int, count: Int, size: Int): Seq[Int] =
     Seq(Op.Read) ++ le16(addr) ++ le16(count) ++ Seq(size)
 
+  def bias(addr: Int, data: Seq[Int]): Seq[Int] =
+    Seq(Op.Bias) ++ le16(addr) ++ le16(data.length) ++
+      data.flatMap(v => (0 until 4).map(i => (v >> (8 * i)) & 0xff))
+
   val status: Seq[Int] = Seq(Op.Status)
 
   case class Matmul(
@@ -33,11 +37,12 @@ object HostFrames {
       ldB: Int = 4,
       ldC: Int = 4,
       flags: Int = 0,
-      shift: Int = 0
+      shift: Int = 0,
+      biasAddr: Int = 0
   ) {
     def bytes: Seq[Int] =
       Seq(Op.Matmul) ++ Seq(aAddr, bAddr, cAddr, m, k, n, ldA, ldB, ldC).flatMap(le16) ++
-        Seq(flags, shift)
+        Seq(flags, shift) ++ le16(biasAddr)
   }
 
   /** The 9 bytes of a STATUS reply. */
@@ -60,7 +65,8 @@ object HostFrames {
 case class SeenTileCmd(aAddr: Int, bAddr: Int, ldA: Int, ldB: Int, m: Int)
 case class SeenAccCtrl(
     first: Boolean, last: Boolean, cAddr: Int, ldC: Int, m: Int,
-    relu: Boolean, requant: Boolean, shift: Int, toInput: Boolean
+    relu: Boolean, requant: Boolean, shift: Int, toInput: Boolean,
+    bias: Boolean, biasAddr: Int, leakShift: Int
 )
 
 object Tiles {
@@ -82,7 +88,9 @@ object Tiles {
         first = kOff == 0, last = kOff + c.rows == mm.k,
         (mm.cAddr + nOff) % (1 << c.resAddrW), mm.ldC, mm.m,
         relu = (mm.flags & 2) != 0, requant = (mm.flags & 1) != 0, mm.shift,
-        toInput = (mm.flags & 4) != 0
+        toInput = (mm.flags & 4) != 0,
+        bias = (mm.flags & 8) != 0, (mm.biasAddr + nOff) % c.biasDepth,
+        leakShift = (mm.flags >> 4) & 7
       )
     )
 }
@@ -101,6 +109,7 @@ class DecoderWithSequencer(c: SAConfig, b: BoardConfig) extends Module {
     val bufRdResp = Flipped(Decoupled(c.accT))
     val tileCmd = Decoupled(new TileCmd(c))
     val accCtrl = Decoupled(new AccCtrl(c))
+    val biasWr = Valid(new BiasWritePort(c))
     val tileDone = Flipped(Valid(Bool()))
     val status = Output(new SeqStatus)
   })
@@ -120,6 +129,7 @@ class DecoderWithSequencer(c: SAConfig, b: BoardConfig) extends Module {
   io.status := seq.io.status
   io.tileCmd <> seq.io.tileCmd
   io.accCtrl <> seq.io.accCtrl
+  io.biasWr := dec.io.biasWr
   seq.io.tileDone := io.tileDone
 }
 
@@ -137,6 +147,7 @@ class DecoderBench(dut: DecoderWithSequencer, seed: Int = 0, randomReady: Boolea
   val received = mutable.ArrayBuffer[Int]() // bytes sent back on tx
   val writes = mutable.ArrayBuffer[(Int, Int)]() // (addr, signed data) on bufWr
   val readReqs = mutable.ArrayBuffer[Int]() // addresses on bufRdReq
+  val biasWrites = mutable.ArrayBuffer[(Int, Int)]() // (addr, signed data) on biasWr
   val resultMem = mutable.Map[Int, BigInt]().withDefaultValue(BigInt(0))
 
   // data mover / accumulators model
@@ -183,7 +194,8 @@ class DecoderBench(dut: DecoderWithSequencer, seed: Int = 0, randomReady: Boolea
       a.first.peekBoolean(), a.last.peekBoolean(), a.cAddr.peekInt().toInt,
       a.ldC.peekInt().toInt, a.m.peekInt().toInt,
       a.relu.peekBoolean(), a.requant.peekBoolean(), a.shift.peekInt().toInt,
-      a.toInput.peekBoolean()
+      a.toInput.peekBoolean(), a.bias.peekBoolean(), a.biasAddr.peekInt().toInt,
+      a.leakShift.peekInt().toInt
     )
   }
 
@@ -242,6 +254,11 @@ class DecoderBench(dut: DecoderWithSequencer, seed: Int = 0, randomReady: Boolea
     val rdFire = rdValid && rdReqReady
     if (rdFire) { readReqs += dut.io.bufRdReq.bits.addr.peekInt().toInt; active = true }
     else if (rdValid) heldRd = Some(dut.io.bufRdReq.bits.addr.peekInt())
+
+    if (dut.io.biasWr.valid.peekBoolean()) {
+      biasWrites += ((dut.io.biasWr.bits.addr.peekInt().toInt, dut.io.biasWr.bits.data.peekInt().toInt))
+      active = true
+    }
 
     val respFire = respValid && dut.io.bufRdResp.ready.peekBoolean()
 

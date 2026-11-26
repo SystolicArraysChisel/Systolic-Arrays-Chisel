@@ -42,6 +42,8 @@ target_compile_options(tpu_host_lib PRIVATE -Wall -Wextra -Wpedantic -Wconversio
 # The executable
 add_executable(run_board src/run_board.cpp)
 target_link_libraries(run_board PUBLIC tpu_host_lib)
+add_executable(run_mlp src/run_mlp.cpp)
+target_link_libraries(run_mlp PRIVATE tpu_host_lib nlohmann_json::nlohmann_json)
 
 # Tests
 enable_testing()

@@ -98,6 +98,20 @@ void TpuDriver::write(Addr addr, std::span<const std::int8_t> data) {
     }
 }
 
+void TpuDriver::write_bias(Addr addr, std::span<const std::int32_t> data) {
+    const int len = static_cast<int>(data.size());
+    if (addr < 0 || addr + len > cfg_.bias_depth) {
+        throw ProtocolError("BIAS of " + std::to_string(len) + " entries at " +
+                            std::to_string(addr) + " leaves the bias memory");
+    }
+    for (int off = 0; off < len; off += MAX_FIELD) {
+        const auto chunk = data.subspan(static_cast<std::size_t>(off),
+                                        static_cast<std::size_t>(std::min(MAX_FIELD, len - off)));
+        send(bias_frame(addr + off, chunk));
+        check();
+    }
+}
+
 std::vector<std::int64_t> TpuDriver::read(Addr addr, Dim count, int size) {
     if (addr < 0 || addr + count > cfg_.out_depth) {
         throw ProtocolError("READ of " + std::to_string(count) + " elements at " +

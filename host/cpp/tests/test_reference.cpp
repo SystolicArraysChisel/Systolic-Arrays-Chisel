@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <random>
 #include <stdexcept>
+#include <vector>
 
 #include "tpu_host/matrix.hpp"
 #include "tpu_host/reference.hpp"
@@ -45,6 +46,18 @@ TEST(Reference, RequantThenRelu) {
               (Matrix<std::int64_t>(1, 4, {127, 0, 3, 0})));
 }
 
+TEST(Reference, LeakyReluShiftsNegativesRightRoundingDown) {
+    const Matrix<std::int64_t> acc(1, 5, {300, -300, -7, -1, 5});
+    // no requant: -300 >> 2 = -75, -7 >> 2 = -2 (floor of -1.75), -1 >> 2 = -1
+    EXPECT_EQ(post_process(acc, /*requant=*/false, /*relu=*/true, /*shift=*/0, /*leak_shift=*/2),
+              (Matrix<std::int64_t>(1, 5, {300, -75, -2, -1, 5})));
+    // requant shift 1: [150, -150, -3, 0, 3] saturated to [127, -127, -3, 0, 3], then -3 >> 1 = -2, -127 >> 1 = -64
+    EXPECT_EQ(post_process(acc, /*requant=*/true, /*relu=*/true, /*shift=*/1, /*leak_shift=*/1),
+              (Matrix<std::int64_t>(1, 5, {127, -64, -2, 0, 3})));
+    // leak_shift 0 is the plain ReLU
+    EXPECT_EQ(post_process(-9, false, true, 0, 0), 0);
+}
+
 TEST(Reference, MatchesANaiveProductOnRandomInt8) {
     std::mt19937 rng(1);
     const Matrix<std::int8_t> a = random_int8(rng, 7, 13);
@@ -59,6 +72,17 @@ TEST(Reference, MatchesANaiveProductOnRandomInt8) {
             EXPECT_EQ(c(i, j), expected);
         }
     }
+}
+
+TEST(Reference, BiasStartsEachColumnAndWrapsLikeTheAccumulator) {
+    const std::vector<std::int32_t> bias{100, -50};
+    EXPECT_EQ(matmul_ref(A, B, false, false, 0, 32, bias),
+              (Matrix<std::int64_t>(3, 2, {112, -49, 128, -45, 104, -53})));
+    // requant after the bias: (12 + 100) / 2 = 56, (1 - 50) / 2 rounds to -24 (ties up)
+    EXPECT_EQ(matmul_ref(A, B, true, false, 1, 32, bias)(0, 0), 56);
+    // INT32_MAX + 12 wraps to a negative value, as in the accumulator
+    const std::vector<std::int32_t> big{INT32_MAX, 0};
+    EXPECT_EQ(matmul_ref(A, B, false, false, 0, 32, big)(0, 0), INT32_MAX + 12LL - (1LL << 32));
 }
 
 TEST(Reference, RejectsAnAccumulatorOverflow) {

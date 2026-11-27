@@ -78,4 +78,6 @@ simulation bit for bit.
 | 8x8 | 434/450 (96.4 %) | 9,129 | 78.9 % | 3,477 | 51.8 % |
 
 Cycles are summed over the 15 batches. From 2x2 to 8x8, layer 1 gets 13.2x
-faster with 16x more PEs.
+faster with 16x more PEs. The raw outputs are in [docs/data/](data/)
+(`run_mlp_<config>.txt`; the first line, `board`, means it ran on the FPGA,
+not on FakeTpu).

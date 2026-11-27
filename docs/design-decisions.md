@@ -177,8 +177,8 @@ Images are processed in batches of 32:
 | X: 32 images × 64 pixels | 2048 |
 | W1: 64 × 16 | 1024 |
 | Hidden H: 32 × 16 (written back on chip) | 512 |
-| W2: 16 × 12 (10 outputs padded to a multiple of 4) | 192 |
-| **Total** | **3776 ≤ 4096** |
+| W2: 16 × 16 (10 outputs padded to 16, a multiple of banks for 2×2, 4×4 and 8×8) | 256 |
+| **Total** | **3840 ≤ 4096** |
 
 **Flow.** Training and quantization happen offline in Python
 (`scripts/train_digits.py`), which exports the int8 weights, int32 biases,
@@ -394,6 +394,10 @@ Quantization costs one image out of 450.
 **Limit:** run on FakeTpu only. The board run uses the same binary with
 `TPU_PORT` set.
 
+**Update (27 Nov 2026):** run on the board on 2x2, 4x4 and 8x8: 434 / 450 on
+all three, bit-exact ([board validation](board-validation.md)). The 8x8 needed
+W2 padded to 16 columns (12 is not a multiple of its 8 banks).
+
 ### 8.5 Performance report (#50) — PR #56
 - `run_board` (an empty `main()` until now) runs random int8 square products
   of size 4, 8, 16 and 32 on the board, or on FakeTpu when no board is
@@ -415,6 +419,9 @@ Quantization costs one image out of 450.
 
   Utilization rises with size because the fixed fill/drain latency of the
   array (`rows + cols − 1` cycles per tile) is spread over more rows.
+- **Update (27 Nov 2026):** measured on the 4x4 board: 25, 83, 373 and 2,405
+  cycles. The model is optimistic for small products and pessimistic for 32
+  (it ignores tile overlap). All configurations: [board validation](board-validation.md).
 
 ### 8.6 Board chaining test (#51) — PR #55
 - The existing FakeTpu chaining test body moved into a shared helper
@@ -425,6 +432,10 @@ Quantization costs one image out of 450.
   hidden layer never travels back to the host.
 - It skips without a board, like the other board tests. It has not been run
   on hardware yet.
+- **Update (27 Nov 2026):** the chain is now 8 → 16 → 8, so every size is a
+  multiple of the 8x8 bank count (8 → 12 → 4 was rejected there by
+  `Matmul::check`). It passes on 2x2, 4x4 and 8x8; a FakeTpu test with the 8x8
+  parameters covers it without a board.
 
 ### 8.7 PE heatmap (#52) — PR #57
 - `PeHeatmapSpec` runs one ragged MATMUL (m = 16, k = 6, n = 5) on the whole
@@ -453,7 +464,8 @@ Of the 4 × 16 × 16 = 1024 PE-cycles spent, only 480 (47%) are useful. The
 figure shows what padding costs when a matrix doesn't match the array size.
 
 ### 8.8 README (#53) — PR #61
-- New root `README.md` (about 120 lines): intro, features, architecture
+- New root `README.md` (about 120 lines; its performance table was later
+  replaced by board measurements): intro, features, architecture
   diagram and block table, repository layout, build and test, the digits demo
   with its accuracy table, the performance table (labelled as the FakeTpu cycle
   model), the PE heatmap, and a link to this document. It links

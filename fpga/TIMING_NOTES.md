@@ -1,5 +1,10 @@
 # Timing and resource notes (MVP build, 24 Oct 2026)
 
+> **Status (Nov 2026): resolved.** The Accumulators are pipelined, the result
+> memory is in BRAM and every PE multiplier is in a DSP. 2x2, 4x4 and 8x8 all
+> meet timing at 100 MHz: see [docs/board-validation.md](../docs/board-validation.md).
+> The notes below describe the MVP build only.
+
 First full Vivado build of `BoardTop` + `Tpu` (4x4 array, maxM = 64, Vivado
 2026.1, xc7a100tcsg324-1). Not fixed for the MVP demo: the core is run at
 **50 MHz** from an MMCM instead (`ClockGen`, `BoardConfig.nexysTpu`).

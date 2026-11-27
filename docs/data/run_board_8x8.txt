@@ -1,0 +1,6 @@
+board, 8x8 at 100 MHz
+size  cycles  busy PE-cycles  util %  MAC/s
+   4      37             256    10.8  1.73e+08
+   8      45             512    17.8  1.14e+09
+  16     159            4096    40.3  2.58e+09
+  32     729           32768    70.2  4.49e+09

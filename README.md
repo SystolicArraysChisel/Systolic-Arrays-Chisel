@@ -50,8 +50,8 @@ The wire protocol (WRITE, READ, MATMUL, STATUS, BIAS) is documented in
 | `src/test/` | Scala tests, including the Scala reference model `tpu.ref.RefModel` and shared `ref_vectors.txt` |
 | `host/` | C++ host library, tests, demo and tools ([host/README.md](host/README.md)) |
 | `fpga/` | Vivado scripts, pin constraints, timing notes |
-| `scripts/` | Python: digits training (`train_digits.py`), PE heatmap (`pe_heatmap.py`) |
-| `docs/` | [Design decisions](docs/design-decisions.md) and figures |
+| `scripts/` | Python: digits training (`train_digits.py`), PE heatmap (`pe_heatmap.py`), board utilization plot (`board_utilization.py`) |
+| `docs/` | [Design decisions](docs/design-decisions.md), [board validation](docs/board-validation.md) and figures |
 
 ## Build and test
 
@@ -77,6 +77,8 @@ python3 -m venv .venv; .venv/bin/pip install -r scripts/requirements.txt
 .venv/bin/python scripts/train_digits.py
 ```
 
+On Windows use `.venv\Scripts\python` instead of `.venv/bin/python`.
+
 Run it from `host/cpp/` after building the host: `./build/run_mlp` (software
 FakeTpu), or `TPU_PORT=COM3 TPU_CONFIG=../../build/4x4/config.json ./build/run_mlp`
 on the board.
@@ -85,25 +87,27 @@ on the board.
 |---|---|
 | Float | 96.67 % |
 | int8 pipeline (simulation) | 96.44 % |
-| Accelerator (FakeTpu, bit-exact) | 434 / 450 = 96.44 % |
+| Accelerator (board, 2x2 / 4x4 / 8x8, bit-exact) | 434 / 450 = 96.44 % |
 
 ## Performance
 
 `./build/run_board` (in `host/cpp/`) runs random int8 square products of size 4
 to 32 on the board, checks them against the reference model, and reports cycles,
-utilization and MAC/s. The table below is the **FakeTpu cycle model** on the 4x4
-array at 100 MHz, not a hardware measurement; run `run_board` with a board
-attached for real numbers.
+utilization and MAC/s. Measured on the board at 100 MHz, 32×32×32 product:
 
-| Size | Cycles | Busy PE-cycles | Utilization | MAC/s |
-|---|---|---|---|---|
-| 4 | 15 | 64 | 26.7 % | 4.27e8 |
-| 8 | 76 | 512 | 42.1 % | 6.74e8 |
-| 16 | 432 | 4096 | 59.3 % | 9.48e8 |
-| 32 | 2752 | 32768 | 74.4 % | 1.19e9 |
+| Array | Cycles | Useful MACs, % of peak | GMAC/s (peak) |
+|---|---|---|---|
+| 2x2 | 8,835 | 92.7 % | 0.37 (0.4) |
+| 4x4 | 2,405 | 85.2 % | 1.36 (1.6) |
+| 8x8 | 729 | 70.2 % | 4.49 (6.4) |
+
+![PE utilization vs matrix size on the board](docs/figures/board_utilization.png)
 
 Utilization grows with size because the fixed fill/drain latency of the array
-(`rows + cols - 1` cycles per tile) is spread over more rows.
+(`rows + cols - 1` cycles per tile) is spread over more rows; a larger array
+needs a larger product to fill. Timing, resources, tests, all sizes and the MLP
+demo per configuration: [docs/board-validation.md](docs/board-validation.md)
+(figure: `python scripts/board_utilization.py`).
 
 ## PE heatmap
 

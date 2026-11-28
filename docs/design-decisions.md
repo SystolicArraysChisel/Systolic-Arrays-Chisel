@@ -220,12 +220,7 @@ both reference models).
 | **Stacked PRs (chosen)** | Each dependent PR is based on its parent branch, so all PRs can be opened at once and merged bottom-up. |
 | Sequential on main | Every PR is based on main; the next one is opened only after the previous one is merged. |
 
-```
-main ── host-posix-serial (#46) ──┬── bias (#47) ── leaky-relu (#48) ── digits-demo (#49) ── readme (#53)
-                                  ├── perf-report (#50)
-                                  └── board-chain-test (#51)
-main ── pe-heatmap (#52)
-```
+![Stacked pull requests](figures/pr_stack.svg)
 
 ### 4.8 Commits
 

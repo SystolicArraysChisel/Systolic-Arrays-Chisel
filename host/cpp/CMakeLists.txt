@@ -63,10 +63,13 @@ if(Qt6_FOUND)
         gui/demo_page.cpp
         gui/programmer.hpp
         gui/programmer.cpp
+        gui/paths.hpp
+        gui/paths.cpp
         gui/widgets.hpp
         gui/widgets.cpp
     )
     target_link_libraries(tpu_app PRIVATE tpu_host_lib Qt6::Widgets)
+    qt_add_resources(tpu_app "icon" PREFIX "/" BASE gui FILES gui/tpu_app.png)
     target_compile_definitions(
         tpu_app
         PRIVATE

@@ -1,0 +1,127 @@
+# Builds tpu_app for Windows and Linux and runs the host tests.
+# On a pull request that touches the host it only checks the build; on a tag
+# v* it also creates a draft GitHub release with both packages. Bitstreams
+# need Vivado, which CI does not have: attach them to the draft by hand
+# (docs/releasing.md).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "host/**"
+      - "fpga/program.tcl"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-qt6-base
+            zip
+
+      - name: Build
+        run: |
+          cmake -S host/cpp -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Test
+        run: ./build/tpu_host_tests
+
+      - name: Package
+        run: |
+          D=dist/tpu_app
+          mkdir -p "$D/fpga"
+          cp build/tpu_app.exe "$D/"
+          windeployqt6 --release --no-translations --no-opengl-sw --no-system-d3d-compiler "$D/tpu_app.exe"
+          # windeployqt copies Qt itself; the MinGW runtime and Qt's other
+          # MSYS2 dependencies (ICU, zstd, ...) come from ldd.
+          for f in $(ldd "$D"/tpu_app.exe "$D"/*.dll "$D"/*/*.dll | awk '$3 ~ /^\/mingw64\// {print $3}' | sort -u); do
+            cp -n "$f" "$D/"
+          done
+          cp -r host/cpp/demo "$D/"
+          cp fpga/program.tcl "$D/fpga/"
+          (cd dist && zip -qr ../tpu_app-windows-x64.zip tpu_app)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tpu_app-windows-x64
+          path: tpu_app-windows-x64.zip
+
+  linux:
+    # The AppImage runs on distributions at least as recent as this runner
+    # (glibc 2.39: Ubuntu 24.04, Debian 13, Fedora 40 and later).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build qt6-base-dev qmake6 libgl1-mesa-dev file
+
+      - name: Build
+        run: |
+          cmake -S host/cpp -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Test
+        run: ./build/tpu_host_tests
+
+      - name: Package
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1  # no FUSE on the runner
+          QMAKE: /usr/bin/qmake6
+        run: |
+          mkdir -p AppDir/usr/bin/fpga
+          cp build/tpu_app AppDir/usr/bin/
+          cp -r host/cpp/demo AppDir/usr/bin/
+          cp fpga/program.tcl AppDir/usr/bin/fpga/
+          base=https://github.com/linuxdeploy
+          curl -sSLo linuxdeploy "$base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          curl -sSLo linuxdeploy-plugin-qt "$base/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+          chmod +x linuxdeploy linuxdeploy-plugin-qt
+          ./linuxdeploy --appdir AppDir --executable AppDir/usr/bin/tpu_app \
+            --desktop-file host/cpp/gui/tpu_app.desktop --icon-file host/cpp/gui/tpu_app.png \
+            --plugin qt --output appimage
+          mv TPU_App*.AppImage tpu_app-linux-x86_64.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tpu_app-linux-x86_64
+          path: tpu_app-linux-x86_64.AppImage
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist/tpu_app-windows-x64.zip
+            dist/tpu_app-linux-x86_64.AppImage

@@ -19,6 +19,7 @@
 #include <exception>
 #include <system_error>
 
+#include "paths.hpp"
 #include "programmer.hpp"
 #include "tpu_host/config.hpp"
 #include "tpu_host/fake_tpu.hpp"
@@ -376,10 +377,8 @@ void DemoPage::clearResult() {
 
 void DemoPage::programFpga() {
     // The file dialog opens on the bitstream of the selected array size.
-    const QString suggested =
-        QStringLiteral(REPO_DIR "/build/") + array_box_->currentText() + "/BoardTop.bit";
-    const QString start =
-        QFileInfo::exists(suggested) ? suggested : QStringLiteral(REPO_DIR "/build");
+    const QString suggested = bitstreamDir() + "/" + array_box_->currentText() + "/BoardTop.bit";
+    const QString start = QFileInfo::exists(suggested) ? suggested : bitstreamDir();
     const QString bit =
         QFileDialog::getOpenFileName(this, tr("Program FPGA"), start, tr("Bitstreams (*.bit)"));
     if (bit.isEmpty()) {

@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" width="980" height="560" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>System architecture: the host talks to the TPU over UART; inside the FPGA the command decoder feeds the buffer and the sequencer, which drives the data mover, the systolic array and the accumulators.</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .io   { fill: #f1f5f9; stroke: #64748b; }
+      .ctl  { fill: #e0ecff; stroke: #3b6fd8; }
+      .dp   { fill: #dcf5e7; stroke: #1f9d55; }
+      .mem  { fill: #fff4d6; stroke: #c99a06; }
+      .host { fill: #f8fafc; stroke: #64748b; }
+      rect  { stroke-width: 1.4; }
+      .name { font-weight: 600; fill: #0f172a; }
+      .sub  { fill: #475569; font-size: 11.5px; }
+      .lbl  { fill: #334155; font-size: 11.5px; }
+      .wire { fill: none; stroke: #475569; stroke-width: 1.5; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 5 4; }
+    </style>
+  </defs>
+
+  <!-- background card, so the figure reads on light and dark pages -->
+  <rect x="0" y="0" width="980" height="560" rx="14" fill="#ffffff" stroke="#d0d7de"/>
+
+  <!-- host -->
+  <rect class="host" x="20" y="200" width="170" height="160" rx="10"/>
+  <text class="name" x="105" y="226" text-anchor="middle">Host PC</text>
+  <text class="sub" x="105" y="252" text-anchor="middle">tpu_app, run_mlp,</text>
+  <text class="sub" x="105" y="268" text-anchor="middle">run_board</text>
+  <line x1="40" y1="282" x2="170" y2="282" stroke="#cbd5e1"/>
+  <text class="sub" x="105" y="302" text-anchor="middle">C++ host library</text>
+  <text class="sub" x="105" y="318" text-anchor="middle">TpuDriver, quantization,</text>
+  <text class="sub" x="105" y="334" text-anchor="middle">reference model</text>
+
+  <!-- FPGA frame -->
+  <rect x="232" y="18" width="732" height="524" rx="12" fill="#fbfdff" stroke="#94a3b8" stroke-dasharray="6 4"/>
+  <text class="name" x="248" y="40">FPGA: Nexys4 DDR (Artix-7 xc7a100t), 100 MHz</text>
+
+  <!-- host <-> UART -->
+  <path class="wire" d="M190,240 H218 V85 H248"/>
+  <path class="wire" d="M248,465 H218 V320 H192"/>
+  <text class="lbl" x="212" y="150" text-anchor="end">commands</text>
+  <text class="lbl" x="212" y="420" text-anchor="end">replies</text>
+  <text class="lbl" x="105" y="384" text-anchor="middle">USB-UART, 2 Mbaud</text>
+
+  <!-- I/O -->
+  <rect class="io" x="250" y="62" width="100" height="46" rx="8"/>
+  <text class="name" x="300" y="90" text-anchor="middle">UartRx</text>
+  <rect class="io" x="372" y="62" width="96" height="46" rx="8"/>
+  <text class="name" x="420" y="90" text-anchor="middle">RxFifo</text>
+  <rect class="io" x="250" y="442" width="100" height="46" rx="8"/>
+  <text class="name" x="300" y="470" text-anchor="middle">UartTx</text>
+  <path class="wire" d="M350,85 H370"/>
+  <path class="wire" d="M468,85 H498"/>
+
+  <!-- control -->
+  <rect class="ctl" x="500" y="58" width="164" height="54" rx="8"/>
+  <text class="name" x="582" y="81" text-anchor="middle">CommandDecoder</text>
+  <text class="sub" x="582" y="99" text-anchor="middle">parses frames</text>
+  <rect class="ctl" x="704" y="58" width="140" height="54" rx="8"/>
+  <text class="name" x="774" y="81" text-anchor="middle">Sequencer</text>
+  <text class="sub" x="774" y="99" text-anchor="middle">splits into tiles</text>
+  <path class="wire" d="M664,85 H702"/>
+  <text class="lbl" x="683" y="52" text-anchor="middle">MATMUL</text>
+
+  <!-- decoder -> UartTx (READ data, STATUS) -->
+  <path class="wire" d="M500,104 H486 V465 H352"/>
+  <text class="lbl" x="418" y="458" text-anchor="middle">READ, STATUS</text>
+
+  <!-- decoder -> buffer (WRITE, READ) -->
+  <path class="wire" d="M516,112 V398" marker-start="url(#arrow)"/>
+  <text class="lbl" x="522" y="200">WRITE</text>
+  <text class="lbl" x="522" y="215">READ</text>
+
+  <!-- decoder -> bias memory -->
+  <path class="wire" d="M640,58 V40 H952 V265 H942"/>
+  <text class="lbl" x="800" y="34" text-anchor="middle">BIAS</text>
+
+  <!-- sequencer -> mover / accumulators -->
+  <path class="wire" d="M744,112 V170 H598 V228"/>
+  <text class="lbl" x="668" y="164" text-anchor="middle">tiles</text>
+  <path class="wire" d="M804,112 V170 H892 V228"/>
+  <text class="lbl" x="850" y="164" text-anchor="middle">control</text>
+
+  <!-- datapath -->
+  <rect class="dp" x="542" y="230" width="112" height="70" rx="8"/>
+  <text class="name" x="598" y="254" text-anchor="middle">DataMover</text>
+  <text class="sub" x="598" y="271" text-anchor="middle">streams weights</text>
+  <text class="sub" x="598" y="286" text-anchor="middle">and activations</text>
+
+  <rect class="dp" x="684" y="206" width="126" height="118" rx="8"/>
+  <text class="name" x="747" y="226" text-anchor="middle">SystolicArray</text>
+  <text class="sub" x="747" y="242" text-anchor="middle">N×N PEs</text>
+  <g fill="#ffffff" stroke="#1f9d55" stroke-width="1">
+    <rect x="715" y="252" width="14" height="14"/><rect x="733" y="252" width="14" height="14"/><rect x="751" y="252" width="14" height="14"/><rect x="769" y="252" width="14" height="14"/>
+    <rect x="715" y="270" width="14" height="14"/><rect x="733" y="270" width="14" height="14"/><rect x="751" y="270" width="14" height="14"/><rect x="769" y="270" width="14" height="14"/>
+    <rect x="715" y="288" width="14" height="14"/><rect x="733" y="288" width="14" height="14"/><rect x="751" y="288" width="14" height="14"/><rect x="769" y="288" width="14" height="14"/>
+    <rect x="715" y="306" width="14" height="14"/><rect x="733" y="306" width="14" height="14"/><rect x="751" y="306" width="14" height="14"/><rect x="769" y="306" width="14" height="14"/>
+  </g>
+
+  <rect class="dp" x="840" y="230" width="102" height="70" rx="8"/>
+  <text class="name" x="891" y="254" text-anchor="middle">Accumulators</text>
+  <text class="sub" x="891" y="271" text-anchor="middle">bias, requant,</text>
+  <text class="sub" x="891" y="286" text-anchor="middle">(leaky) ReLU</text>
+
+  <path class="wire" d="M654,265 H682"/>
+  <path class="wire" d="M810,265 H838"/>
+
+  <!-- buffer -->
+  <rect x="500" y="384" width="452" height="104" rx="10" fill="#fffbeb" stroke="#c99a06" stroke-width="1.4"/>
+  <text class="name" x="514" y="478">UnifiedBuffer</text>
+  <rect class="mem" x="512" y="400" width="206" height="54" rx="7"/>
+  <text class="name" x="615" y="422" text-anchor="middle">Input memory</text>
+  <text class="sub" x="615" y="440" text-anchor="middle">A and B, int8, banked</text>
+  <rect class="mem" x="734" y="400" width="206" height="54" rx="7"/>
+  <text class="name" x="837" y="422" text-anchor="middle">Result memory</text>
+  <text class="sub" x="837" y="440" text-anchor="middle">C, int32</text>
+
+  <!-- buffer <-> datapath -->
+  <path class="wire" d="M580,400 V302"/>
+  <path class="wire" d="M892,300 V398"/>
+  <text class="lbl" x="898" y="376">C</text>
+  <path class="wire dash" d="M862,300 V368 H690 V398"/>
+  <text class="lbl" x="776" y="361" text-anchor="middle">toInput: next layer</text>
+</svg>

@@ -1,0 +1,27 @@
+Block RAM: Final Mapping Report
++--------------+-----------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Module Name   | RTL Object      | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
++--------------+-----------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|\c/core /buf_ | resultMem_0_reg | 1 K x 32(READ_FIRST)   | W |   | 1 K x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 1      | 
+|\c/core /buf_ | resultMem_1_reg | 1 K x 32(READ_FIRST)   | W |   | 1 K x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 1      | 
+|\c/core /buf_ | resultMem_2_reg | 1 K x 32(READ_FIRST)   | W |   | 1 K x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 1      | 
+|\c/core /buf_ | resultMem_3_reg | 1 K x 32(READ_FIRST)   | W |   | 1 K x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 1      | 
+|\c/core /acc  | biasMem_0_reg   | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core /acc  | biasMem_1_reg   | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core /acc  | biasMem_2_reg   | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core /acc  | biasMem_3_reg   | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
++--------------+-----------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+Distributed RAM: Final Mapping Report
++--------------+----------------------+-----------+----------------------+--------------+
+|Module Name   | RTL Object           | Inference | Size (Depth x Width) | Primitives   | 
++--------------+----------------------+-----------+----------------------+--------------+
+|\c/core /buf_ | inputMem_0_reg       | Implied   | 1 K x 8              | RAM64M x 96  | 
+|\c/core /buf_ | inputMem_1_reg       | Implied   | 1 K x 8              | RAM64M x 96  | 
+|\c/core /buf_ | inputMem_2_reg       | Implied   | 1 K x 8              | RAM64M x 96  | 
+|\c/core /buf_ | inputMem_3_reg       | Implied   | 1 K x 8              | RAM64M x 96  | 
+|\c/core /acc  | accMem_0_reg         | Implied   | 64 x 32              | RAM64M x 11  | 
+|\c/core /acc  | accMem_1_reg         | Implied   | 64 x 32              | RAM64M x 11  | 
+|\c/core /acc  | accMem_2_reg         | Implied   | 64 x 32              | RAM64M x 11  | 
+|\c/core /acc  | accMem_3_reg         | Implied   | 64 x 32              | RAM64M x 11  | 
+|BoardTop      | c/fifo/queue/ram_reg | Implied   | 16 x 8               | RAM32M x 2   | 
++--------------+----------------------+-----------+----------------------+--------------+

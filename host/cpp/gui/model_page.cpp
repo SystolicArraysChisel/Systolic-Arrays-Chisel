@@ -9,14 +9,10 @@
 #include <QVBoxLayout>
 #include <exception>
 
+#include "paths.hpp"
 #include "tpu_host/digits.hpp"
 
 namespace digits = tpu_host::digits;
-
-QString demoDir() {
-    const QString local = QCoreApplication::applicationDirPath() + "/demo";
-    return QDir(local).exists() ? local : QStringLiteral(DEMO_DIR);
-}
 
 ModelPage::ModelPage(QWidget* parent) : QWidget(parent) {
     auto* title = new QLabel(tr("Choose a model"));

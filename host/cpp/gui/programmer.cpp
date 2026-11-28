@@ -6,22 +6,33 @@
 #include <QStandardPaths>
 #include <algorithm>
 
+#include "paths.hpp"
+
 namespace {
 
-// vivado on PATH, else the newest one in the default install folders.
+// vivado on PATH, else the newest one in the default install folders
+// (<root>/<version>/Vivado/bin or <root>/<version>/bin).
 QString findVivado() {
     QString found = QStandardPaths::findExecutable("vivado");
     if (!found.isEmpty()) {
         return found;
     }
+#ifdef _WIN32
     const QStringList roots = {"C:/AMDDesignTools", "C:/Xilinx/Vivado", "C:/Xilinx"};
+    const QString exe = "vivado.bat";
+#else
+    const QStringList roots = {"/tools/Xilinx", "/tools/Xilinx/Vivado", "/opt/Xilinx",
+                               "/opt/Xilinx/Vivado", QDir::homePath() + "/Xilinx"};
+    const QString exe = "vivado";
+#endif
     for (const QString& root : roots) {
         QStringList versions = QDir(root).entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
         std::reverse(versions.begin(), versions.end());
         for (const QString& v : versions) {
-            for (const QString& rel : {"/Vivado/bin/vivado.bat", "/bin/vivado.bat"}) {
-                if (QFileInfo::exists(root + "/" + v + rel)) {
-                    return root + "/" + v + rel;
+            for (const QString& bin : {"/Vivado/bin/", "/bin/"}) {
+                const QString path = root + "/" + v + bin + exe;
+                if (QFileInfo::exists(path)) {
+                    return path;
                 }
             }
         }
@@ -61,7 +72,7 @@ bool FpgaProgrammer::start(const QString& bitstream, QString* error) {
         *error = tr("Vivado was not found. Add its bin folder to PATH.");
         return false;
     }
-    const QString script = QStringLiteral(REPO_DIR "/fpga/program.tcl");
+    const QString script = programScript();
     if (!QFileInfo::exists(script)) {
         *error = tr("fpga/program.tcl was not found.");
         return false;

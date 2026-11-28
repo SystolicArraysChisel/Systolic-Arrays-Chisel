@@ -1,136 +1,371 @@
-# Systolic-array matrix-multiply accelerator
+# Systolic-array neural-network accelerator
 
-A weight-stationary systolic-array accelerator (TPU-like) written in Chisel 3.6.1
-for the Nexys4 DDR FPGA. A C++ host sends int8 matrices over UART (2 Mbaud),
-starts the product, and reads back int32 results (or requantized int8). Inputs
-are int8, accumulation is int32, the board clock is 100 MHz.
+We built a small TPU-like accelerator for neural networks in Chisel, and it runs
+on a Nexys4 DDR FPGA board. A PC sends it matrices over USB; our accelerator
+multiplies them on a grid of multiply-accumulate units and sends the results
+back.
 
-## Features
+At its heart is a systolic array: a grid of small processing elements, each
+holding one weight, that pass values to their neighbours every clock cycle. We
+load each weight once and reuse it for many inputs, and all the elements work
+in parallel, so data mostly moves between neighbours instead of to and from
+memory. That is what makes this kind of hardware fast and energy-efficient.
 
-- Parameterized N×N array; `EmitBoard` builds 2x2, 4x4 (default) and 8x8.
-- Weight double buffering: the next tile's weights load while the current tile
-  computes, and tiles run back to back.
-- Tiling of arbitrary m×k×n products (m up to 64 per MATMUL; the host splits larger A).
-- Requantization (int32 to int8 by right shift), ReLU and Leaky ReLU
-  (power-of-two slope).
-- Hardware bias: int32 per output column, added at the first K-tile.
-- On-chip layer chaining (`toInput`): a layer's int8 output is written back to
-  the input memory and feeds the next MATMUL without going through the host.
-- Cycle and PE-utilization counters, returned by STATUS.
+Our accelerator is general, not tied to one network. It computes matrix
+products (int8 inputs, int32 sums) with bias, requantization and (leaky) ReLU,
+and it can keep a layer's output on chip as the input of the next layer. To
+change the network, you only load other weights: we synthesize one bitstream
+once and it runs both of our models, handwritten digits and drawn shapes and
+symbols. You can build larger networks from the same operations.
+
+![tpu_app recognising a drawn star on the accelerator](docs/figures/tpu_app.png)
+
+*`tpu_app`, our desktop app for the accelerator: pick a model, draw with the
+mouse, and the network tells you what you drew, here a star. It runs on the TPU
+on the board, or on its simulator as in this screenshot.*
+
+More detail: [architecture](docs/architecture.md),
+[running your own network](docs/extending.md).
+
+## Quick start: the app
+
+Download from the [releases](../../releases):
+
+- the app: `tpu_app-windows-x64.zip` (unzip it and run `tpu_app.exe`) or
+  `tpu_app-linux-x86_64.AppImage` (make it executable and run it);
+- `bitstreams.zip`: our ready-made bitstreams for the three array sizes (2x2,
+  4x4, 8x8). Unzip it next to the app (into the `tpu_app` folder on Windows,
+  beside the AppImage on Linux) and the app finds them.
+
+Then:
+
+1. Without a board: start `tpu_app`, choose a model, keep **Run on: Simulator**
+   and draw. The network runs on a bit-exact software model of our accelerator.
+2. With the board: connect the Nexys4 DDR to your PC with the USB cable
+   (PROG/UART port) and switch it on.
+   - Load a bitstream with **Program FPGA...** in the app. You need Vivado on
+     Windows or Linux for this; Vivado's Hardware Manager works too. The FPGA
+     forgets the bitstream when you switch it off.
+   - Select the board's serial port in **Run on** and the bitstream's size in
+     **Array**, then draw.
+
+## Build from source
+
+Tools:
+
+- JDK 17 or newer and sbt 1.13, for the hardware generator and its simulation
+  tests (sbt downloads Scala 2.13 and Chisel 3.6.1).
+- Vivado (we use 2026.1), to build bitstreams and program the FPGA.
+- CMake 3.20 or newer and a C++20 compiler (we use MSYS2 MinGW g++ on Windows),
+  for the host library, the command-line tools and their tests.
+- Qt 6, optional (we use 6.8 and 6.12), for `tpu_app`.
+- Python 3, optional, with numpy, scikit-learn and Pillow, to retrain the models.
+
+### Test the hardware in simulation
+
+Our tests simulate the Chisel design block by block, and as a whole system that
+receives commands over its UART exactly like the board. CI runs the same tests
+on every push. From the repository root:
+
+```
+sbt test
+```
+
+### Build a bitstream and load it
+
+1. Generate the Verilog of one configuration (`2x2`, `4x4` or `8x8`); the
+   generator writes it to `generated/8x8/`:
+
+   ```
+   sbt "runMain tpu.board.EmitBoard 8x8"
+   ```
+
+2. Synthesize, place and route it with Vivado. The script writes
+   `build/8x8/BoardTop.bit`, the timing, resource and power reports, and
+   `config.json`, which tells the host software how this build is configured
+   (keep it with the bitstream):
+
+   ```
+   vivado -mode batch -source fpga/build.tcl -tclargs 8x8
+   ```
+
+3. Load it into the FPGA (or use **Program FPGA...** in the app). The FPGA
+   forgets it when you switch the board off:
+
+   ```
+   vivado -mode batch -source fpga/program.tcl -tclargs 8x8
+   ```
+
+### Generate a bitstream for your own configuration
+
+Two parameter classes set every size in our design: `SAConfig` (the array and
+its memories) and `BoardConfig` (clock and serial link). `EmitBoard.configs`
+([EmitBoard.scala](src/main/scala/tpu/board/EmitBoard.scala)) lists the
+configurations you can build. To make a new one, add an entry, for example an
+8x8 array with four times the input memory:
+
+```scala
+"8x8-16k" -> SAConfig(rows = 8, cols = 8, inDepth = 16384)
+```
+
+then build it with the steps above, using its name (`8x8-16k`). The generator
+checks the combination and tells you what is wrong if it cannot build it.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `rows`, `cols` | 4, 4 | Array size. Square and a power of two for now |
+| `inDepth` | 4096 | Input memory, int8 elements (A, B and chained layers); power of two, at most 65,536 |
+| `outDepth` | 4096 | Result memory, int32 elements |
+| `biasDepth` | 256 | Bias memory, int32 entries |
+| `maxM` | 64 | Rows of A per MATMUL (depth of the accumulator memory) |
+| `accWidth` | 32 | Accumulator width (inputs are 8-bit: the host protocol sends one byte per element) |
+| `clockHz`, `baud` | 100 MHz, 2 Mbaud | `BoardConfig`: core clock and UART speed |
+
+The other `SAConfig` fields (dataflow, weight loading, products per PE) only
+accept what we implemented: weight-stationary, one weight row shifted in per
+cycle, one product per PE per cycle.
+
+### Build the host software and the app
+
+On the host side we have a C++ library that talks to the board, `tpu_app`, and
+the command-line tools we use for our measurements. From the repository root:
+
+```
+cd host/cpp
+cmake -S . -B build -G "MinGW Makefiles"    # without -G on macOS and Linux
+cmake --build build                          # builds tpu_app only if CMake finds Qt 6
+./build/tpu_host_tests                       # the test suite; the board tests skip without a board
+./build/tpu_app
+```
+
+Toolchain setup, the C++ API and board options: [host/README.md](host/README.md).
+
+## Reproduce our measurements
+
+We measured the performance and accuracy figures of this README on the board
+with three command-line tools, which you build with the host software (in
+`host/cpp/build/`):
+
+- `run_board` benchmarks matrix products: it runs random int8 products from
+  4×4×4 to 32×32×32, checks each against our reference model, and prints the
+  cycles, the PE utilization and the multiply-adds per second.
+- `run_mlp` runs a model's whole test set, checks every result bit for bit
+  against the reference, and prints the accuracy and the cycles per layer.
+- `tpu_host_tests` is our host test suite; its `Board` tests check products, a
+  float product and two chained layers on the FPGA.
+
+They talk to the board when you set `TPU_PORT` (its serial port) and
+`TPU_CONFIG` (the bitstream's `config.json`), and to the software model
+otherwise. From `host/cpp/`, for example:
+
+```
+TPU_PORT=COM3 TPU_CONFIG=../../build/8x8/config.json ./build/run_board
+```
+
+In PowerShell, set `$env:TPU_PORT` and `$env:TPU_CONFIG` first.
+
+| What we measure | How | Where we recorded it |
+|---|---|---|
+| Throughput and PE utilization of matrix products (performance table and plot) | `./build/run_board` | `docs/data/run_board_<size>.txt`; plot: `python scripts/board_utilization.py` |
+| Accuracy and cycles of a model | `./build/run_mlp demo/digits_model.json` (or `shapes_model.json`) | `docs/data/run_mlp_<size>.txt` |
+| Correctness on the board | `./build/tpu_host_tests --gtest_filter=Board.*` | [board validation](docs/board-validation.md#on-board-tests) |
+| Timing, resources, power | the Vivado reports that `fpga/build.tcl` writes in `build/<size>/` | [board validation](docs/board-validation.md#implementation) |
+| Active cycles per PE (heatmap below) | `sbt "testOnly tpu.PeHeatmapSpec"`, then `python scripts/pe_heatmap.py` | `docs/figures/pe_heatmap.png` |
+| The model files themselves | `python scripts/train_digits.py`, `python scripts/train_shapes.py` | `host/cpp/demo/*.json` |
+
+## Running your own network
+
+The app runs any model file with the same shape as ours, and you can drive any
+sequence of matrix products from the C++ host library. How to add a model, what
+our board supports today and where its limits are:
+[docs/extending.md](docs/extending.md).
+
+## Performance
+
+We measured these numbers on the board at 100 MHz, for a 32×32×32 product. The
+power figures are Vivado's estimates.
+
+| Array | PEs (DSP) | LUTs | Cycles | GMAC/s (peak) | Of peak | Power | GMAC/s per W |
+|---|---|---|---|---|---|---|---|
+| 2x2 | 4 | 3,199 | 8,835 | 0.37 (0.4) | 92.7 % | 0.145 W | 2.6 |
+| 4x4 | 16 | 3,883 | 2,405 | 1.36 (1.6) | 85.2 % | 0.178 W | 7.6 |
+| 8x8 | 64 | 5,496 | 729 | 4.49 (6.4) | 70.2 % | 0.251 W | 17.9 |
+
+Our design scales. The 8x8 array is 12× faster than the 2x2 for 1.7× the logic,
+because each PE is one DSP slice and the logic around the array grows slowly.
+It also does 7× more work per joule.
+
+![PE utilization vs matrix size on the board](docs/figures/board_utilization.png)
+
+Bigger arrays need bigger products. Each tile costs a fixed fill and drain of
+`rows + cols − 1` cycles, which the rows of A have to amortize. A small product
+leaves a large array mostly idle: 4×4×4 keeps only 2.7 % of the 8x8 busy and
+runs slower there than on the 4x4. From 8×8×8 upwards the 8x8 always wins.
+
+Padding costs cycles. We pad k and n to a multiple of the array size, so one
+ragged product (16×6×5) on the 4x4 uses only 480 of its 1,024 PE-cycles:
+
+![Active cycles per PE](docs/figures/pe_heatmap.png)
+
+On a real network the link dominates. Our 8x8 array classifies the 450 test
+digits in 12,606 cycles (0.13 ms, 0.28 µs per image), the 2x2 in 1.5 ms. Sending
+the images and reading the results over the 2 Mbaud UART takes about 0.3 s (we
+estimated this from the bytes sent). That is why we keep chained layers on chip
+and send images in batches.
+
+| Model | Accuracy |
+|---|---|
+| Handwritten digits (64-16-10), on the board, 2x2, 4x4 and 8x8 | 434 / 450 = 96.4 %, bit-exact with the integer simulation (float model: 96.7 %) |
+| Shapes and symbols (64-16-10), on the software model | 300 / 300 stored test drawings (99.9 % of 3,000 generated ones) |
+
+All configurations, timing and per-layer numbers:
+[board validation](docs/board-validation.md).
+
+## Synthesis results
+
+We built our two main configurations, 4x4 and 8x8, with Vivado 2026.1 for the
+Artix-7 XC7A100T (package CSG324, speed grade -1) of the Nexys4 DDR, using our
+batch flow `fpga/build.tcl` with Vivado's default settings and the board's
+100 MHz clock. The reports are in [docs/data/](docs/data/) (`vivado_4x4/`,
+`vivado_8x8/`).
+
+Where the resources go, per block after synthesis:
+
+| Block | 4x4 LUTs | 4x4 FFs | 8x8 LUTs | 8x8 FFs | Memories and DSPs (4x4 / 8x8) |
+|---|---|---|---|---|---|
+| Accumulators | 1,496 | 814 | 2,820 | 1,471 | accumulator memory in LUT RAM (176 / 352 LUTs), bias memory in block RAM (4 / 8 RAMB18) |
+| UnifiedBuffer | 1,826 | 96 | 1,863 | 160 | input memory in LUT RAM (1,536 LUTs), result memory in block RAM (4 RAMB36 / 8 RAMB18) |
+| SystolicArray | 160 | 445 | 688 | 1,653 | 16 / 64 DSP slices, one per PE |
+| CommandDecoder | 221 | 321 | 217 | 319 | |
+| Sequencer | 159 | 266 | 152 | 257 | |
+| DataMover | 100 | 116 | 105 | 118 | |
+| UART and receive FIFO | 70 | 55 | 64 | 55 | FIFO in LUT RAM |
+| Total | 4,033 | 2,115 | 5,918 | 4,035 | 6 / 8 block RAM tiles, 16 / 64 DSPs |
+
+After place and route, Vivado trims the LUTs to 3,883 (4x4) and 5,496 (8x8);
+the flip-flops stay the same.
+
+- The processing elements are cheap: each one is a DSP slice, and the whole
+  array takes 4 % of the LUTs on the 4x4 and 12 % on the 8x8. Going from 4x4 to
+  8x8 (four times the PEs) adds about 1,900 LUTs, and most of them go to the
+  accumulators, which post-process every output column (rounding, shift,
+  saturation, ReLU).
+- Memories: the result memory and the bias memory end up in block RAM, but the
+  input memory and the accumulator memory end up in LUT RAM. Each bank of the
+  input memory has two read ports (activations, and the next tile's weights for
+  double buffering), so Vivado builds it from LUTs: 1,536 LUTs, 38 % of the 4x4
+  design. Moving it to block RAM is our clearest way to save logic. The
+  flip-flops are pipeline and control registers; in the array they hold the two
+  weights of each PE and the values moving between PEs.
+- Timing: both builds meet our 100 MHz target, with a worst setup slack of
+  +0.315 ns (4x4) and +0.354 ns (8x8), so about 103 MHz would still close. The
+  critical path is in the accumulators, from the requantization shift amount to a
+  pipeline register, and two thirds of its delay is routing: the post-processing,
+  not the PE grid, sets our clock.
+- Power (Vivado's estimate): 0.178 W on the 4x4 and 0.251 W on the 8x8, of which
+  0.098 W is the device's static power in both.
+- Latency: a 4×4×4 product takes 25 cycles (250 ns) on the 4x4 and an 8×8×8
+  product 45 cycles (450 ns) on the 8x8. In general row m of a tile leaves the
+  array `m + rows + cols − 1` cycles after the first row enters, with the weight
+  load overlapping the previous tile. The UART dwarfs this: the 23-byte MATMUL
+  command alone takes 115 µs to arrive.
 
 ## Architecture
 
-```
-host -- UART --> UartRx -> RxFifo -> CommandDecoder -> Sequencer -> DataMover -> SystolicArray -> Accumulators
-                                          |  ^                                                        |
-                                          v  |                                                        v
-host <- UART <-- UartTx <------------- READ / STATUS replies <------------------------------- UnifiedBuffer
-```
+![System architecture](docs/figures/architecture.svg)
 
-| Block | Role |
-|---|---|
-| `UartRx`, `RxFifo`, `UartTx` | Serial line, with a receive FIFO |
-| `CommandDecoder` | Parses frames into buffer writes, bias writes, MATMUL instructions, READ and STATUS replies |
-| `Sequencer` | Splits a MATMUL into tiles and issues them back to back |
-| `DataMover` | Streams weights and activations from the buffer into the array |
-| `SystolicArray` | The PE grid, with input skew and output de-skew |
-| `Accumulators` | Sum partial results across K-tiles; add bias; requantize, ReLU |
-| `UnifiedBuffer` | Banked input memory (A and B, 4096 elements) and result memory |
+- Host PC: `tpu_app` or the command-line tools, on top of our C++ library. It
+  quantizes the data, sends commands over the USB-UART link at 2 Mbaud and
+  checks the results against a bit-exact reference model.
+- `UartRx`: receives the bytes from the serial line.
+- `RxFifo`: holds up to 16 bytes while the decoder is busy.
+- `CommandDecoder`: parses each frame. It writes matrices into the input memory,
+  biases into the accumulators, hands MATMULs to the sequencer and answers READ
+  and STATUS.
+- `Sequencer`: cuts a MATMUL into array-sized tiles and issues them back to back.
+  It also counts the cycles and busy PE-cycles that STATUS reports.
+- `DataMover`: streams each tile's weights and activations from the input memory
+  into the array.
+- `SystolicArray`: the N×N grid of processing elements; each one does an int8
+  multiply-add per cycle on one DSP slice.
+- `Accumulators`: add up the partial sums across tiles, add the bias, requantize
+  to int8 and apply (leaky) ReLU.
+- `UnifiedBuffer`: the input memory (A and B, int8, one bank per array column)
+  and the result memory (C, int32). With `toInput`, the accumulators write C back
+  into the input memory, so the next layer reads it without a trip to the host.
+- `UartTx`: sends READ data and STATUS replies back to the host.
 
-The core is `Tpu` (`src/main/scala/tpu/Tpu.scala`: `TpuCore` plus the UART), wrapped by
-`BoardTop` (clock generation, pins) for the FPGA.
-The wire protocol (WRITE, READ, MATMUL, STATUS, BIAS) is documented in
-[`HostProtocol.scala`](src/main/scala/tpu/io/HostProtocol.scala).
+How data flows through the array, how we tile large products, our memories and
+the host protocol: [docs/architecture.md](docs/architecture.md).
+
+## Verification
+
+We check our design at several levels, from single blocks to the board:
+
+- Unit tests: every block (UART, decoder, buffer, sequencer, data mover, array,
+  accumulators) has its own simulation tests in chiseltest
+  (`src/test/scala/tpu/`).
+- Full system: `TpuSpec` simulates the whole core and drives it through its UART
+  byte by byte, exactly like the real host (`src/test/scala/tpu/TpuSpec.scala`);
+  `TpuSpec` covers the 4x4 in depth and `TpuConfigsSpec` runs a tiled product
+  on the other buildable sizes.
+- Reference models: we wrote a bit-exact model of what one MATMUL computes, in
+  Scala (`tpu.ref.RefModel`) and in C++ (`host/cpp/src/reference.cpp`). Both
+  check the same shared vectors (`src/test/resources/ref_vectors.txt`), so they
+  cannot drift apart.
+- Host tests: 112 tests check the protocol, the driver, quantization and both
+  models against `FakeTpu`, a software TPU that answers the same protocol
+  (`host/cpp/tests/`).
+- Board tests: products of many shapes, a float product, two chained layers and
+  the digits model run on the FPGA and must match the reference bit for bit, on
+  2x2, 4x4 and 8x8 ([board validation](docs/board-validation.md)).
+- Continuous integration: GitHub Actions runs `sbt test` on every push, and
+  builds and tests the host on Windows and Linux for every pull request that
+  touches it.
+
+## Limitations
+
+The clearest limitation is the link to the PC. Our UART runs at 2 Mbaud, about
+200 KB/s, and the host sends every command and polls for every result. On the
+digits model the array computes for 0.13 ms while the data takes about 0.3 s to
+travel. Keeping layers on chip (`toInput`) and batching hide part of it, but any
+network bigger than ours would spend nearly all its time on the link.
+
+Compared with a commercial TPU, such as Google's first TPU
+([Jouppi et al., 2017](https://arxiv.org/abs/1704.04760)):
+
+| | Our accelerator (8x8) | Google TPU v1 |
+|---|---|---|
+| Multiply-accumulate units | 64, at 100 MHz | 65,536 (256×256), at 700 MHz |
+| Peak throughput | 6.4 GMAC/s | 92 TOPS (int8) |
+| On-chip memory | 4 KiB input, 16 KiB result | 24 MiB unified buffer, 4 MiB accumulators |
+| Off-chip memory | none | 8 GiB DDR3 for the weights |
+| Link to the host | UART, about 200 KB/s | PCIe Gen3 x16 |
+| Control | one command at a time from the host | instructions queued on chip, run back to back |
+| Activations | ReLU, Leaky ReLU | ReLU, sigmoid, tanh, plus pooling |
+
+Our design also only supports int8 inference, square power-of-two arrays and
+one requantization scale per layer. [docs/extending.md](docs/extending.md) lists
+every limit and which ones a parameter change can lift.
 
 ## Repository layout
 
 | Path | Content |
 |---|---|
 | `src/main/scala/` | Chisel sources: `ifaces/` (`SAConfig`, interfaces), `tpu/` (core, `board/`, `io/`, `compute/`, `memory/`) |
-| `src/test/` | Scala tests, including the Scala reference model `tpu.ref.RefModel` and shared `ref_vectors.txt` |
-| `host/` | C++ host library, tests, demo and tools ([host/README.md](host/README.md)) |
+| `src/test/` | Scala tests, the reference model `tpu.ref.RefModel` and shared `ref_vectors.txt` |
+| `host/` | C++ host library, `tpu_app`, tools and tests ([host/README.md](host/README.md)) |
 | `fpga/` | Vivado scripts, pin constraints, timing notes |
-| `scripts/` | Python: model training (`train_digits.py`, `train_shapes.py`), PE heatmap (`pe_heatmap.py`), board utilization plot (`board_utilization.py`) |
-| `docs/` | [Design decisions](docs/design-decisions.md), [board validation](docs/board-validation.md) and figures |
+| `scripts/` | Python: model training, performance plot, PE heatmap |
+| `docs/` | [Architecture](docs/architecture.md), [running your own network](docs/extending.md), [board validation](docs/board-validation.md), [design decisions](docs/design-decisions.md), [making a release](docs/releasing.md) |
 
-## Build and test
+## Use of AI tools
 
-```
-sbt test                              # all Scala tests (chiseltest/Treadle; CI runs the same)
-sbt "runMain tpu.board.EmitBoard"     # generated/4x4/BoardTop.v; argument: 2x2, 4x4 or 8x8
-```
+We used AI assistants (LLMs) in three ways:
 
-On the board: `vivado -mode batch -source fpga/build.tcl -tclargs 4x4` builds the
-bitstream, `fpga/program.tcl` loads it. The C++ host builds with CMake on
-Windows, macOS and Linux. Details, port names and board tests are in
-[host/README.md](host/README.md).
-
-## Demo: handwritten digits
-
-A 64-16-10 MLP on scikit-learn's 8x8 digits. Layer 1 uses bias, requantization
-and Leaky ReLU (slope 1/8) and stays on chip; layer 2 uses bias and returns
-int32 logits. `host/cpp/demo/digits_model.json` is committed, so the demo needs
-no Python. To retrain (repository root):
-
-```
-python3 -m venv .venv; .venv/bin/pip install -r scripts/requirements.txt
-.venv/bin/python scripts/train_digits.py
-```
-
-A second model, `host/cpp/demo/shapes_model.json`, uses the same network and
-pipeline for 10 drawn shapes and symbols (circle, square, triangle, star, heart,
-arrow, check mark, cross, lightning, smiley). It needs no dataset:
-`scripts/train_shapes.py` draws the training shapes itself, the way the GUI
-draws, and converts them to network input exactly as the GUI does. `run_mlp`
-takes either file.
-
-On Windows use `.venv\Scripts\python` instead of `.venv/bin/python`.
-
-Run it from `host/cpp/` after building the host: `./build/run_mlp` (software
-FakeTpu), or `TPU_PORT=COM3 TPU_CONFIG=../../build/4x4/config.json ./build/run_mlp`
-on the board.
-
-`tpu_app` is the user application (Qt 6): choose a model, draw with the mouse
-and the network classifies the drawing on the board, or on FakeTpu when "Run on"
-is Simulator. It can also program the FPGA through Vivado. See
-[host/README.md](host/README.md#user-application).
-
-| Model | Accuracy (450 test digits) |
-|---|---|
-| Float | 96.67 % |
-| int8 pipeline (simulation) | 96.44 % |
-| Accelerator (board, 2x2 / 4x4 / 8x8, bit-exact) | 434 / 450 = 96.44 % |
-
-## Performance
-
-`./build/run_board` (in `host/cpp/`) runs random int8 square products of size 4
-to 32 on the board, checks them against the reference model, and reports cycles,
-utilization and MAC/s. Measured on the board at 100 MHz, 32×32×32 product:
-
-| Array | Cycles | Useful MACs, % of peak | GMAC/s (peak) |
-|---|---|---|---|
-| 2x2 | 8,835 | 92.7 % | 0.37 (0.4) |
-| 4x4 | 2,405 | 85.2 % | 1.36 (1.6) |
-| 8x8 | 729 | 70.2 % | 4.49 (6.4) |
-
-![PE utilization vs matrix size on the board](docs/figures/board_utilization.png)
-
-Utilization grows with size because the fixed fill/drain latency of the array
-(`rows + cols - 1` cycles per tile) is spread over more rows; a larger array
-needs a larger product to fill. Timing, resources, tests, all sizes and the MLP
-demo per configuration: [docs/board-validation.md](docs/board-validation.md)
-(figure: `python scripts/board_utilization.py`).
-
-## PE heatmap
-
-![Active cycles per PE](docs/figures/pe_heatmap.png)
-
-One ragged MATMUL (16x6x5) on the 4x4 array: k and n pad to 8, so some PE rows
-and columns idle in some tiles, and only 480 of the 1024 PE-cycles are useful.
-Regenerate with `sbt "testOnly tpu.PeHeatmapSpec"` then `python scripts/pe_heatmap.py`.
-
-## Design decisions
-
-What was added for the final version, the alternatives we considered, and why:
-[docs/design-decisions.md](docs/design-decisions.md).
-
+- To improve the wording of our documentation.
+- For early prototyping, to get a quick first draft of an idea, such as the
+  first version of the host application for our MVP.
+- To assist with coding and to teach us Chisel and C++. A team member checked
+  every result: we reviewed the code, and our tests, the reference models and
+  the board runs had to agree before anything was merged.

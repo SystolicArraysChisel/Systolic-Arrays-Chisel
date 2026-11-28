@@ -1,8 +1,9 @@
 # Board validation (2x2, 4x4, 8x8)
 
-Run on 2026-11-27 on a Nexys4 DDR. All three array configurations build at
+Run on 2026-11-28 on a Nexys4 DDR. All three array configurations build at
 100 MHz with timing met, pass every on-board test bit-exact against the
-reference model, and run the digits MLP at 96.4 % accuracy.
+reference model, and run the digits MLP at 96.4 % and the shapes MLP at 100 %
+accuracy.
 
 ## Setup
 
@@ -11,7 +12,6 @@ reference model, and run the digits MLP at 96.4 % accuracy.
 | Board / part | Nexys4 DDR, xc7a100tcsg324-1 |
 | Tools | Vivado 2026.1, non-project flow (`fpga/build.tcl`) |
 | Core clock / UART | 100 MHz / 2 Mbaud |
-| Commit | `ebec8de`, plus host fixes for 8x8 (MLP outputs padded to 16, chain test 8 → 16 → 8) |
 
 ## Implementation
 
@@ -20,12 +20,12 @@ RAMB18 warnings, no errors.
 
 | Config | WNS (ns) | WHS (ns) | LUT | FF | BRAM (36 Kb) | DSP | Power (W) |
 |---|---|---|---|---|---|---|---|
-| 2x2 | 0.479 | 0.037 | 3,199 (5.0 %) | 1,471 (1.2 %) | 5 | 4 | 0.145 |
-| 4x4 | 0.315 | 0.019 | 3,883 (6.1 %) | 2,115 (1.7 %) | 6 | 16 | 0.178 |
-| 8x8 | 0.354 | 0.007 | 5,496 (8.7 %) | 4,035 (3.2 %) | 8 | 64 | 0.251 |
+| 2x2 | 0.315 | 0.046 | 1,220 (1.9 %) | 1,373 (1.1 %) | 7 | 4 | 0.118 |
+| 4x4 | 0.442 | 0.041 | 1,880 (3.0 %) | 2,029 (1.6 %) | 10 | 16 | 0.150 |
+| 8x8 | 0.360 | 0.037 | 3,326 (5.2 %) | 3,879 (3.1 %) | 16 | 64 | 0.235 |
 
 One DSP per PE in every configuration: the multipliers map to DSP48 slices,
-not LUTs.
+not LUTs. The report excerpts are in [docs/data/](data/) (`vivado_<config>/`).
 
 ## On-board tests
 
@@ -79,5 +79,20 @@ simulation bit for bit.
 
 Cycles are summed over the 15 batches. From 2x2 to 8x8, layer 1 gets 13.2x
 faster with 16x more PEs. The raw outputs are in [docs/data/](data/)
-(`run_mlp_<config>.txt`; the first line, `board`, means it ran on the FPGA,
-not on FakeTpu).
+(`run_mlp_<config>.txt`; "on the board" in the first line means it ran on the
+FPGA, not on FakeTpu).
+
+## Shapes MLP demo
+
+`run_mlp demo/shapes_model.json` classifies the model's 300
+stored test drawings (10 shapes and symbols) with the same 64 → 16 → 10
+layout and the same on-chip chaining as the digits model. Every batch matched
+the reference bit for bit.
+
+| Config | Accuracy | Layer 1 cycles | Layer 1 util. | Layer 2 cycles | Layer 2 util. |
+|---|---|---|---|---|---|
+| 2x2 | 300/300 (100 %) | 79,870 | 96.2 % | 22,270 | 86.2 % |
+| 4x4 | 300/300 (100 %) | 20,958 | 91.6 % | 6,534 | 73.5 % |
+| 8x8 | 300/300 (100 %) | 6,044 | 79.4 % | 2,312 | 51.9 % |
+
+The raw outputs are in [docs/data/](data/) (`run_mlp_shapes_<config>.txt`).

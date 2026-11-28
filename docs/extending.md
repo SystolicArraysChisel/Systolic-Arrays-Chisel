@@ -111,7 +111,8 @@ Steps that work:
 If the network does not fit in 4096 bytes, raise `inDepth` (up to 65,536) for a
 new configuration in `EmitBoard.configs` and build its bitstream: it is a
 parameter, not new hardware. The input memory uses block RAM, of which the
-FPGA has plenty (the 8x8 build uses 8 of 135).
+FPGA has plenty: the 8x8 build uses 16 of its 135 block RAM tiles, 4 of them
+for the 4096-byte input memory, and 65,536 bytes take 16 tiles.
 
 ## 3. Changing the hardware
 

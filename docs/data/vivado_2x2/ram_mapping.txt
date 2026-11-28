@@ -1,0 +1,19 @@
+Block RAM: Final Mapping Report
++----------------------------------------+----------------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Module Name                             | RTL Object                       | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
++----------------------------------------+----------------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 2 K x 8(READ_FIRST)    | W | R | 2 K x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 2 K x 8(READ_FIRST)    | W | R | 2 K x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_0_reg      | 2 K x 32(READ_FIRST)   | W |   | 2 K x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 2      | 
+|BoardTop                                | c/core/buf_/resultMem_1_reg      | 2 K x 32(READ_FIRST)   | W |   | 2 K x 32(WRITE_FIRST)  |   | R | Port A and B     | 0      | 2      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/acc/biasMem_0_reg         | 128 x 32(READ_FIRST)   | W |   | 128 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/acc/biasMem_1_reg         | 128 x 32(READ_FIRST)   | W |   | 128 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
++----------------------------------------+----------------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+Distributed RAM: Final Mapping Report
++------------+----------------------+-----------+----------------------+-------------+
+|Module Name | RTL Object           | Inference | Size (Depth x Width) | Primitives  | 
++------------+----------------------+-----------+----------------------+-------------+
+|BoardTop    | c/fifo/queue/ram_reg | Implied   | 16 x 8               | RAM32M x 2  | 
++------------+----------------------+-----------+----------------------+-------------+

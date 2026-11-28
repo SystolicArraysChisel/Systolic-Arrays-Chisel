@@ -1,8 +1,8 @@
 verilog        generated/4x4/BoardTop.v
-WNS (ns)       0.315
-WHS (ns)       0.019
-LUT            3883 / 63400
-FF             2115 / 126800
-BRAM (36 Kb)   6 / 135
+WNS (ns)       0.442
+WHS (ns)       0.041
+LUT            1880 / 63400
+FF             2029 / 126800
+BRAM (36 Kb)   10 / 135
 DSP            16 / 240
-power (W)      0.178
+power (W)      0.150

@@ -111,6 +111,10 @@ in `src/test/resources/ref_vectors.txt`.
 | Bias memory | 256 | int32 | `biasDepth` |
 | Accumulator memory (rows of C per MATMUL) | 64 | int32 × cols | `maxM` |
 
+All four are block RAMs on the FPGA. For the bitstreams the input and
+accumulator memories are Xilinx XPM macros (`SAConfig.xpmMemories`, set by
+`EmitBoard`); the simulations use `SyncReadMem`.
+
 The input memory has one bank per array column, so the DataMover reads a whole
 row per cycle. Addresses and leading dimensions of A and B must therefore be
 multiples of the bank count, and addresses are 2 bytes in the protocol, which

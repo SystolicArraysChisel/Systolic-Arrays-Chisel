@@ -1,6 +1,6 @@
-Slack (MET) :             0.354ns  (required time - arrival time)
-  Source:                 c/core/acc/shift_reg[3]_rep__3/C
-  Destination:            c/core/acc/pipeP_data_2_reg[30]/D
+Slack (MET) :             0.360ns  (required time - arrival time)
+  Source:                 c/core/acc/shift_reg[2]/C
+  Destination:            c/core/acc/pipeP_data_7_reg[15]/R
   Requirement:            10.000ns  (sys_clk_pin rise@10.000ns - sys_clk_pin rise@0.000ns)
-  Data Path Delay:        9.688ns  (logic 3.200ns (33.031%)  route 6.488ns (66.969%))
-Slack (MET) :             0.424ns  (required time - arrival time)
+  Data Path Delay:        8.949ns  (logic 2.322ns (25.946%)  route 6.627ns (74.054%))
+Slack (MET) :             0.360ns  (required time - arrival time)

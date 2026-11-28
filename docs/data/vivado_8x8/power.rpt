@@ -1,7 +1,7 @@
 Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
 -------------------------------------------------------------------------------------------------------------------------------------------------
 | Tool Version     : Vivado v.2026.1 (win64) Build 6511674 Tue Jun 16 11:02:23 MDT 2026
-| Date             : Sat Nov 28 12:17:16 2026
+| Date             : Sat Nov 28 16:01:33 2026
 | Host             : (build machine)
 | Command          : report_power -file build/8x8/reports/power.rpt
 | Design           : BoardTop
@@ -30,11 +30,11 @@ Table of Contents
 ----------
 
 +--------------------------+--------------+
-| Total On-Chip Power (W)  | 0.251        |
+| Total On-Chip Power (W)  | 0.235        |
 | Design Power Budget (W)  | Unspecified* |
 | Power Budget Margin (W)  | NA           |
-| Dynamic (W)              | 0.153        |
-| Device Static (W)        | 0.098        |
+| Dynamic (W)              | 0.136        |
+| Device Static (W)        | 0.099        |
 | Effective TJA (C/W)      | 4.6          |
 | Max Ambient (C)          | 83.9         |
 | Junction Temperature (C) | 26.1         |
@@ -52,21 +52,21 @@ Table of Contents
 +--------------------------+-----------+----------+-----------+-----------------+
 | On-Chip                  | Power (W) | Used     | Available | Utilization (%) |
 +--------------------------+-----------+----------+-----------+-----------------+
-| Clocks                   |     0.018 |        3 |       --- |             --- |
-| Slice Logic              |     0.014 |    11137 |       --- |             --- |
-|   LUT as Logic           |     0.008 |     3514 |     63400 |            5.54 |
-|   LUT as Distributed RAM |     0.002 |     1894 |     19000 |            9.97 |
+| Clocks                   |     0.014 |        3 |       --- |             --- |
+| Slice Logic              |     0.007 |     8695 |       --- |             --- |
+|   LUT as Logic           |     0.004 |     3232 |     63400 |            5.10 |
 |   LUT as Shift Register  |     0.001 |       88 |     19000 |            0.46 |
-|   CARRY4                 |     0.001 |      325 |     15850 |            2.05 |
-|   Register               |     0.001 |     4035 |    126800 |            3.18 |
-|   F7/F8 Muxes            |    <0.001 |      155 |     63400 |            0.24 |
-|   Others                 |     0.000 |      279 |       --- |             --- |
-| Signals                  |     0.048 |    11829 |       --- |             --- |
-| Block RAM                |     0.003 |        8 |       135 |            5.93 |
+|   Register               |     0.001 |     3879 |    126800 |            3.06 |
+|   CARRY4                 |    <0.001 |      325 |     15850 |            2.05 |
+|   LUT as Distributed RAM |    <0.001 |        6 |     19000 |            0.03 |
+|   Others                 |     0.000 |      303 |       --- |             --- |
+|   F7/F8 Muxes            |     0.000 |       32 |     63400 |            0.05 |
+| Signals                  |     0.025 |    10702 |       --- |             --- |
+| Block RAM                |     0.019 |       16 |       135 |           11.85 |
 | DSPs                     |     0.070 |       64 |       240 |           26.67 |
 | I/O                      |    <0.001 |       20 |       210 |            9.52 |
-| Static Power             |     0.098 |          |           |                 |
-| Total                    |     0.251 |          |           |                 |
+| Static Power             |     0.099 |          |           |                 |
+| Total                    |     0.235 |          |           |                 |
 +--------------------------+-----------+----------+-----------+-----------------+
 
 
@@ -76,7 +76,7 @@ Table of Contents
 +-----------+-------------+-----------+-------------+------------+-------------+-------------+------------+
 | Source    | Voltage (V) | Total (A) | Dynamic (A) | Static (A) | Powerup (A) | Budget (A)  | Margin (A) |
 +-----------+-------------+-----------+-------------+------------+-------------+-------------+------------+
-| Vccint    |       1.000 |     0.168 |       0.153 |      0.016 |       NA    | Unspecified | NA         |
+| Vccint    |       1.000 |     0.151 |       0.135 |      0.016 |       NA    | Unspecified | NA         |
 | Vccaux    |       1.800 |     0.018 |       0.000 |      0.018 |       NA    | Unspecified | NA         |
 | Vcco33    |       3.300 |     0.004 |       0.000 |      0.004 |       NA    | Unspecified | NA         |
 | Vcco25    |       2.500 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
@@ -85,7 +85,7 @@ Table of Contents
 | Vcco135   |       1.350 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
 | Vcco12    |       1.200 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
 | Vccaux_io |       1.800 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
-| Vccbram   |       1.000 |     0.001 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
+| Vccbram   |       1.000 |     0.002 |       0.001 |      0.001 |       NA    | Unspecified | NA         |
 | MGTAVcc   |       1.000 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
 | MGTAVtt   |       1.200 |     0.000 |       0.000 |      0.000 |       NA    | Unspecified | NA         |
 | Vccadc    |       1.800 |     0.020 |       0.000 |      0.020 |       NA    | Unspecified | NA         |
@@ -145,14 +145,15 @@ Table of Contents
 +-------------+-----------+
 | Name        | Power (W) |
 +-------------+-----------+
-| BoardTop    |     0.153 |
-|   c         |     0.153 |
-|     core    |     0.152 |
-|       acc   |     0.033 |
-|       array |     0.098 |
-|       buf_  |     0.017 |
+| BoardTop    |     0.136 |
+|   c         |     0.136 |
+|     core    |     0.135 |
+|       acc   |     0.025 |
+|       array |     0.095 |
+|       buf_  |     0.012 |
 |       dec   |     0.001 |
-|       mover |     0.002 |
+|       mover |     0.001 |
+|       seq   |     0.001 |
 +-------------+-----------+
 
 

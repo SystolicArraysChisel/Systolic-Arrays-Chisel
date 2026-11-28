@@ -227,6 +227,16 @@ both reference models).
 The PRs are committed and pushed with the team member's own git identity. Each
 change is a separate branch and PR referencing its issue.
 
+### 4.9 How should the input and accumulator memories reach block RAM?
+
+Vivado inferred both as LUT RAM: Chisel 3.6 emits each input bank's
+read-write port as a separate write and read port (three ports in all), and
+Vivado rejects `ram_style = "block"` on the accumulator memory. The bitstreams
+therefore use Xilinx XPM macros for them (`xpm_memory_tdpram`,
+`xpm_memory_sdpram`), selected by `SAConfig.xpmMemories`, which `EmitBoard`
+sets. The simulations keep `SyncReadMem`, so the design stays testable in
+chiseltest; the XPM version is checked on the board.
+
 ---
 
 ## 5. Engineering rules followed
@@ -261,7 +271,9 @@ independent reviewer. Its main corrections, all adopted:
 
 - No Nexys4 DDR board or Vivado on the development machine: board tests
   compile and skip, and the timing/resource cost of the bias memory is
-  unchecked until the next Vivado build.
+  unchecked until the next Vivado build. (Checked since: Vivado builds the
+  bias memory in block RAM and every configuration meets timing, see
+  [board validation](board-validation.md).)
 
 ---
 
@@ -289,8 +301,9 @@ turned out differently from the plan.
   to 23 bytes.
 
 **Hardware**
-- `SAConfig.biasDepth = 256` int32 entries: one LUT-RAM bank per PE column,
-  asynchronous read.
+- `SAConfig.biasDepth = 256` int32 entries: one bank per PE column,
+  asynchronous read. Planned as LUT RAM; Vivado moves the register that takes
+  the read into a block RAM, one RAMB18 per column.
 - The sequencer gives each output tile `biasAddr + nOff`, so every N-tile picks
   up its own columns' biases.
 - In the Accumulators, the bias row is read at the pipeline's first stage, from

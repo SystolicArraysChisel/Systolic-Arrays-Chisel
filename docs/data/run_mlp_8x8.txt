@@ -1,4 +1,4 @@
-board
+Handwritten digits on the board
 accuracy 434/450 = 96.4444 %
 layer 1: 9129 cycles, utilization 78.8695 %
 layer 2: 3477 cycles, utilization 51.7688 %

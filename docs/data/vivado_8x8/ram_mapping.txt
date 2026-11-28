@@ -1,43 +1,43 @@
 Block RAM: Final Mapping Report
-+-------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
-|Module Name  | RTL Object                  | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
-+-------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
-|BoardTop     | c/core/buf_/resultMem_7_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|BoardTop     | c/core/buf_/resultMem_6_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|BoardTop     | c/core/buf_/resultMem_5_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|BoardTop     | c/core/buf_/resultMem_4_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|BoardTop     | c/core/buf_/resultMem_3_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|BoardTop     | c/core/buf_/resultMem_2_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|BoardTop     | c/core/buf_/resultMem_1_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|BoardTop     | c/core/buf_/resultMem_0_reg | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_0_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_1_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_2_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_3_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_4_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_5_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_6_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-|\c/core/acc  | biasMem_7_reg               | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
-+-------------+-----------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
++----------------------------------------+----------------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|Module Name                             | RTL Object                       | PORT A (Depth x Width) | W | R | PORT B (Depth x Width) | W | R | Ports driving FF | RAMB18 | RAMB36 | 
++----------------------------------------+----------------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|xpm_memory_tdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 512 x 8(READ_FIRST)    | W | R | 512 x 8(READ_FIRST)    | W | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_7_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_6_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_5_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_4_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_3_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_2_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_1_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|BoardTop                                | c/core/buf_/resultMem_0_reg      | 512 x 32(READ_FIRST)   | W |   | 512 x 32(WRITE_FIRST)  |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|xpm_memory_sdpram:/xpm_memory_base_inst | gen_wr_a.gen_word_narrow.mem_reg | 64 x 32(READ_FIRST)    | W |   | 64 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_0_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_1_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_2_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_3_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_4_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_5_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_6_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
+|\c/core/acc                             | biasMem_7_reg                    | 32 x 32(READ_FIRST)    | W |   | 32 x 32(WRITE_FIRST)   |   | R | Port A and B     | 1      | 0      | 
++----------------------------------------+----------------------------------+------------------------+---+---+------------------------+---+---+------------------+--------+--------+
 Distributed RAM: Final Mapping Report
-+-------------+----------------------------+-----------+----------------------+--------------+
-|Module Name  | RTL Object                 | Inference | Size (Depth x Width) | Primitives   | 
-+-------------+----------------------------+-----------+----------------------+--------------+
-|BoardTop     | c/core/buf_/inputMem_0_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|BoardTop     | c/core/buf_/inputMem_1_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|BoardTop     | c/core/buf_/inputMem_2_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|BoardTop     | c/core/buf_/inputMem_3_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|BoardTop     | c/core/buf_/inputMem_4_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|BoardTop     | c/core/buf_/inputMem_5_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|BoardTop     | c/core/buf_/inputMem_6_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|BoardTop     | c/core/buf_/inputMem_7_reg | Implied   | 512 x 8              | RAM64M x 48  | 
-|\c/core/acc  | accMem_0_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|\c/core/acc  | accMem_1_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|\c/core/acc  | accMem_2_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|\c/core/acc  | accMem_3_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|\c/core/acc  | accMem_4_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|\c/core/acc  | accMem_5_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|\c/core/acc  | accMem_6_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|\c/core/acc  | accMem_7_reg               | Implied   | 64 x 32              | RAM64M x 11  | 
-|BoardTop     | c/fifo/queue/ram_reg       | Implied   | 16 x 8               | RAM32M x 2   | 
-+-------------+----------------------------+-----------+----------------------+--------------+
++------------+----------------------+-----------+----------------------+-------------+
+|Module Name | RTL Object           | Inference | Size (Depth x Width) | Primitives  | 
++------------+----------------------+-----------+----------------------+-------------+
+|BoardTop    | c/fifo/queue/ram_reg | Implied   | 16 x 8               | RAM32M x 2  | 
++------------+----------------------+-----------+----------------------+-------------+

@@ -1,0 +1,4 @@
+Shapes and symbols on the board
+accuracy 300/300 = 100 %
+layer 1: 79870 cycles, utilization 96.1563 %
+layer 2: 22270 cycles, utilization 86.2146 %

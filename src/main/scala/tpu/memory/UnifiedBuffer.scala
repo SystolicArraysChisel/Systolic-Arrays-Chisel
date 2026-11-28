@@ -53,13 +53,25 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     * mover reads up to two complete rows per cycle (one activation row,
     * one weight row), with one element from each bank.
     */
-  val inputMem = Seq.fill(c.banks) {
-    SyncReadMem(c.inDepth / c.banks, c.inT)
-  }
+  val inputMem =
+    if (c.xpmMemories) Seq.empty
+    else Seq.fill(c.banks)(SyncReadMem(c.inDepth / c.banks, c.inT))
+
+  /** With xpmMemories, one xpm_memory_tdpram per bank instead: Chisel 3.6
+    * writes a SyncReadMem read-write port as a separate write port and read
+    * port, so Vivado sees three ports and builds the bank from LUT RAM.
+    */
+  val xpmBanks =
+    if (!c.xpmMemories) Seq.empty
+    else Seq.fill(c.banks) {
+      val ram = Module(new XpmTdpRam(c.inDepth / c.banks, c.inWidth))
+      ram.init(clock)
+      ram
+    }
 
   /**
-    * Input-memory ports: each bank has exactly two, so Vivado maps it to
-    * one true dual-port BRAM.
+    * Input-memory ports: each bank has exactly two, the ports of one true
+    * dual-port BRAM (built as such only with xpmMemories, see xpmBanks).
     *
     * Port A (read/write), by priority:
     *  1. a whole row of C written back by the accumulators (toInput): one
@@ -91,8 +103,22 @@ class UnifiedBuffer(c: SAConfig) extends Module {
     val addrA = Mux(resToInput, resInRow, Mux(hostHere, hostWrRow, io.mvRdReq.bits.rowAddr))
     // Requantized values fit in inWidth bits: keep only those.
     val dataA = Mux(resToInput, io.resWr.bits.data(b)(c.inWidth - 1, 0).asSInt, io.hostWr.bits.data)
-    mvRdRespVec(b) := inputMem(b).readWrite(addrA, dataA, isWrite || io.mvRdReq.fire, isWrite)
-    mvWRdRespVec(b) := inputMem(b).read(io.mvWRdReq.bits.rowAddr, io.mvWRdReq.valid)
+    if (c.xpmMemories) {
+      val ram = xpmBanks(b)
+      ram.io.ena := isWrite || io.mvRdReq.fire
+      ram.io.wea := isWrite
+      ram.io.addra := addrA
+      ram.io.dina := dataA.asUInt
+      mvRdRespVec(b) := ram.io.douta.asSInt
+      ram.io.enb := io.mvWRdReq.valid
+      ram.io.web := 0.U
+      ram.io.addrb := io.mvWRdReq.bits.rowAddr
+      ram.io.dinb := 0.U
+      mvWRdRespVec(b) := ram.io.doutb.asSInt
+    } else {
+      mvRdRespVec(b) := inputMem(b).readWrite(addrA, dataA, isWrite || io.mvRdReq.fire, isWrite)
+      mvWRdRespVec(b) := inputMem(b).read(io.mvWRdReq.bits.rowAddr, io.mvWRdReq.valid)
+    }
   }
 
   // Both responses are valid one cycle after their request.

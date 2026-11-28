@@ -31,7 +31,12 @@ case class SAConfig(
       64 /* Depth of the accumulator memory (the Accumulators block below the array), in rows of C.
        * Partial sums of every row of C are stored there between K-tiles, so one MATMUL
        * can have at most maxM rows (m <= maxM). The host splits a larger A by rows into
-       * several MATMULs. Unrelated to the PEs, which keep no sum. */
+       * several MATMULs. Unrelated to the PEs, which keep no sum. */,
+    xpmMemories: Boolean =
+      false /* Build the input memory (xpm_memory_tdpram) and the accumulator memory
+       * (xpm_memory_sdpram) from Xilinx XPM block RAMs instead of SyncReadMems, which
+       * Vivado maps to LUT RAM. EmitBoard sets it for every Vivado build. Chisel
+       * simulation cannot run the XPM black boxes, so the tests keep the default. */
 ) {
   // ---- derived values ----
   def inT: SInt = SInt(inWidth.W); // Chisel type of an input element

@@ -29,8 +29,11 @@ object EmitBoard {
 
   def main(args: Array[String]): Unit = {
     val name = args.headOption.getOrElse("4x4")
-    val c = configs.getOrElse(name,
+    val sim = configs.getOrElse(name,
       sys.error(s"unknown config '$name' (available: ${configs.keys.toSeq.sorted.mkString(", ")})"))
+    // For Vivado the memories are XPM block RAMs. The tests simulate the same
+    // configs with SyncReadMems instead, since they cannot run the XPM black boxes.
+    val c = sim.copy(xpmMemories = true)
     val dir = s"generated/$name"
     emit(() => new Tpu(c, b), dir, b.clockHz)
     Files.write(Paths.get(dir, "config.json"), configJson(name, c, b).getBytes("UTF-8"))

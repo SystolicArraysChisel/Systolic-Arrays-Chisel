@@ -119,8 +119,11 @@ if CMake still does not find it, pass `-DCMAKE_PREFIX_PATH=<Qt dir>`.
 - **Run on**: Simulator (FakeTpu, no board needed) or a serial port; the list is refreshed when
   it opens. The board must be programmed with the bitstream of the chosen **Array** size.
 - **Program FPGA...** loads a bitstream with Vivado (`fpga/program.tcl`; Vivado on `PATH` or in
-  `C:\AMDDesignTools`, `C:\Xilinx`). The file dialog opens on `build/<array>/BoardTop.bit`;
-  if a `config.json` lies beside the chosen file, **Array** is set to match it.
+  its default install folder: `C:\AMDDesignTools`, `C:\Xilinx`, `/tools/Xilinx`, `/opt/Xilinx`).
+  The file dialog opens on `bitstreams/<array>/BoardTop.bit` beside a released app, or
+  `build/<array>/BoardTop.bit` in the source tree; if a `config.json` lies beside the chosen
+  file, **Array** is set to match it. Where the app looks for its files:
+  [docs/releasing.md](../docs/releasing.md#where-the-app-looks-for-its-files).
 
 A drawing becomes network input the way sklearn's digits were made: crop to the ink, scale the
 longer side to 32 pixels, then count the set pixels in each 4x4 block (0..16).

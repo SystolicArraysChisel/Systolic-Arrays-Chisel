@@ -19,6 +19,3 @@ class ModelPage : public QWidget {
     QListWidget* list_;
     QPushButton* open_;
 };
-
-// The folder holding the model files: demo/ next to the executable, else the source tree's.
-QString demoDir();

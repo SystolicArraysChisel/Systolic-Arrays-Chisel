@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=TPU App
+Comment=Run neural networks on the systolic-array accelerator
+Exec=tpu_app
+Icon=tpu_app
+Categories=Education;Science;

@@ -1,0 +1,6 @@
+Slack (MET) :             0.315ns  (required time - arrival time)
+  Source:                 c/core/acc/pipeRnd_rounded_1_reg[28]/C
+  Destination:            c/core/acc/pipeP_data_1_reg[0]/D
+  Requirement:            10.000ns  (sys_clk_pin rise@10.000ns - sys_clk_pin rise@0.000ns)
+  Data Path Delay:        9.704ns  (logic 2.547ns (26.247%)  route 7.157ns (73.753%))
+Slack (MET) :             0.323ns  (required time - arrival time)

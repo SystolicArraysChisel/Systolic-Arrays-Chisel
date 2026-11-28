@@ -1,0 +1,8 @@
+verilog        generated/2x2/BoardTop.v
+WNS (ns)       0.315
+WHS (ns)       0.046
+LUT            1220 / 63400
+FF             1373 / 126800
+BRAM (36 Kb)   7 / 135
+DSP            4 / 240
+power (W)      0.118

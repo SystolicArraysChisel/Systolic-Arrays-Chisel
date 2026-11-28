@@ -167,9 +167,9 @@ In PowerShell, set `$env:TPU_PORT` and `$env:TPU_CONFIG` first.
 | What we measure | How | Where we recorded it |
 |---|---|---|
 | Throughput and PE utilization of matrix products (performance table and plot) | `./build/run_board` | `docs/data/run_board_<size>.txt`; plot: `python scripts/board_utilization.py` |
-| Accuracy and cycles of a model | `./build/run_mlp demo/digits_model.json` (or `shapes_model.json`) | `docs/data/run_mlp_<size>.txt` |
+| Accuracy and cycles of a model | `./build/run_mlp demo/digits_model.json` (or `shapes_model.json`) | `docs/data/run_mlp_<size>.txt` (digits), `docs/data/run_mlp_shapes_<size>.txt` |
 | Correctness on the board | `./build/tpu_host_tests --gtest_filter=Board.*` | [board validation](docs/board-validation.md#on-board-tests) |
-| Timing, resources, power | the Vivado reports that `fpga/build.tcl` writes in `build/<size>/` | [board validation](docs/board-validation.md#implementation) |
+| Timing, resources, power | the Vivado reports that `fpga/build.tcl` writes in `build/<size>/reports/`; RAM mapping in `build/<size>/vivado.log` | `docs/data/vivado_<size>/`, [synthesis results](#synthesis-results) |
 | Active cycles per PE (heatmap below) | `sbt "testOnly tpu.PeHeatmapSpec"`, then `python scripts/pe_heatmap.py` | `docs/figures/pe_heatmap.png` |
 | The model files themselves | `python scripts/train_digits.py`, `python scripts/train_shapes.py` | `host/cpp/demo/*.json` |
 
@@ -187,13 +187,13 @@ power figures are Vivado's estimates.
 
 | Array | PEs (DSP) | LUTs | Cycles | GMAC/s (peak) | Of peak | Power | GMAC/s per W |
 |---|---|---|---|---|---|---|---|
-| 2x2 | 4 | 3,199 | 8,835 | 0.37 (0.4) | 92.7 % | 0.145 W | 2.6 |
-| 4x4 | 16 | 3,883 | 2,405 | 1.36 (1.6) | 85.2 % | 0.178 W | 7.6 |
-| 8x8 | 64 | 5,496 | 729 | 4.49 (6.4) | 70.2 % | 0.251 W | 17.9 |
+| 2x2 | 4 | 1,220 | 8,835 | 0.37 (0.4) | 92.7 % | 0.118 W | 3.1 |
+| 4x4 | 16 | 1,880 | 2,405 | 1.36 (1.6) | 85.2 % | 0.150 W | 9.1 |
+| 8x8 | 64 | 3,326 | 729 | 4.49 (6.4) | 70.2 % | 0.235 W | 19.1 |
 
-Our design scales. The 8x8 array is 12× faster than the 2x2 for 1.7× the logic,
+Our design scales. The 8x8 array is 12× faster than the 2x2 for 2.7× the LUTs,
 because each PE is one DSP slice and the logic around the array grows slowly.
-It also does 7× more work per joule.
+It also does 6× more work per joule.
 
 ![PE utilization vs matrix size on the board](docs/figures/board_utilization.png)
 
@@ -216,59 +216,67 @@ and send images in batches.
 | Model | Accuracy |
 |---|---|
 | Handwritten digits (64-16-10), on the board, 2x2, 4x4 and 8x8 | 434 / 450 = 96.4 %, bit-exact with the integer simulation (float model: 96.7 %) |
-| Shapes and symbols (64-16-10), on the software model | 300 / 300 stored test drawings (99.9 % of 3,000 generated ones) |
+| Shapes and symbols (64-16-10), on the board, 2x2, 4x4 and 8x8 | 300 / 300 stored test drawings (in software: 99.9 % of 3,000 generated ones) |
 
 All configurations, timing and per-layer numbers:
 [board validation](docs/board-validation.md).
 
 ## Synthesis results
 
-We built our two main configurations, 4x4 and 8x8, with Vivado 2026.1 for the
-Artix-7 XC7A100T (package CSG324, speed grade -1) of the Nexys4 DDR, using our
-batch flow `fpga/build.tcl` with Vivado's default settings and the board's
-100 MHz clock. The reports are in [docs/data/](docs/data/) (`vivado_4x4/`,
-`vivado_8x8/`).
+We built all three configurations with Vivado 2026.1 for the Artix-7
+XC7A100T (package CSG324, speed grade -1) of the Nexys4 DDR, using our batch
+flow `fpga/build.tcl` with Vivado's default settings and the board's 100 MHz
+clock. These are the bitstreams we ran on the board; the report excerpts are
+in [docs/data/](docs/data/) (`vivado_<size>/`).
+
+After place and route:
+
+| Array | LUTs | FFs | Block RAM tiles | DSPs | WNS / WHS | Fmax (est.) | Power (dynamic + static) |
+|---|---|---|---|---|---|---|---|
+| 2x2 | 1,220 (1.9 %) | 1,373 (1.1 %) | 7 (5.2 %) | 4 (1.7 %) | +0.315 / +0.046 ns | 103 MHz | 0.118 W (0.020 + 0.098) |
+| 4x4 | 1,880 (3.0 %) | 2,029 (1.6 %) | 10 (7.4 %) | 16 (6.7 %) | +0.442 / +0.041 ns | 105 MHz | 0.150 W (0.052 + 0.098) |
+| 8x8 | 3,326 (5.2 %) | 3,879 (3.1 %) | 16 (11.9 %) | 64 (26.7 %) | +0.360 / +0.037 ns | 104 MHz | 0.235 W (0.136 + 0.099) |
+
+Percentages are of the XC7A100T (63,400 LUTs, 126,800 FFs, 135 block RAM
+tiles, 240 DSPs). Fmax is estimated from the slack as 1 / (10 ns − WNS). The
+DRC reports no errors, only warnings (DSP pipelining advice and, on the 8x8, a
+reset check on the result memory's block RAMs). The DSPs limit the array size
+on this FPGA: a 16x16 array would need 256 of the 240.
 
 Where the resources go, per block after synthesis:
 
 | Block | 4x4 LUTs | 4x4 FFs | 8x8 LUTs | 8x8 FFs | Memories and DSPs (4x4 / 8x8) |
 |---|---|---|---|---|---|
-| Accumulators | 1,496 | 814 | 2,820 | 1,471 | accumulator memory in LUT RAM (176 / 352 LUTs), bias memory in block RAM (4 / 8 RAMB18) |
-| UnifiedBuffer | 1,826 | 96 | 1,863 | 160 | input memory in LUT RAM (1,536 LUTs), result memory in block RAM (4 RAMB36 / 8 RAMB18) |
+| Accumulators | 1,259 | 808 | 2,400 | 1,459 | accumulator and bias memories (4 + 4 / 8 + 8 RAMB18) |
+| UnifiedBuffer | 38 | 16 | 82 | 16 | input memory (4 / 8 RAMB18), result memory (4 RAMB36 / 8 RAMB18) |
 | SystolicArray | 160 | 445 | 688 | 1,653 | 16 / 64 DSP slices, one per PE |
-| CommandDecoder | 221 | 321 | 217 | 319 | |
+| CommandDecoder | 221 | 321 | 223 | 319 | |
 | Sequencer | 159 | 266 | 152 | 257 | |
-| DataMover | 100 | 116 | 105 | 118 | |
-| UART and receive FIFO | 70 | 55 | 64 | 55 | FIFO in LUT RAM |
-| Total | 4,033 | 2,115 | 5,918 | 4,035 | 6 / 8 block RAM tiles, 16 / 64 DSPs |
+| DataMover | 100 | 116 | 113 | 118 | |
+| UART and receive FIFO | 70 | 55 | 65 | 55 | FIFO in LUT RAM |
+| Total | 2,008 | 2,029 | 3,724 | 3,879 | 10 / 16 block RAM tiles, 16 / 64 DSPs |
 
-After place and route, Vivado trims the LUTs to 3,883 (4x4) and 5,496 (8x8);
-the flip-flops stay the same.
+Place and route then trims the LUTs to 1,880 (4x4) and 3,326 (8x8).
 
-- The processing elements are cheap: each one is a DSP slice, and the whole
-  array takes 4 % of the LUTs on the 4x4 and 12 % on the 8x8. Going from 4x4 to
-  8x8 (four times the PEs) adds about 1,900 LUTs, and most of them go to the
-  accumulators, which post-process every output column (rounding, shift,
-  saturation, ReLU).
-- Memories: the result memory and the bias memory end up in block RAM, but the
-  input memory and the accumulator memory end up in LUT RAM. Each bank of the
-  input memory has two read ports (activations, and the next tile's weights for
-  double buffering), so Vivado builds it from LUTs: 1,536 LUTs, 38 % of the 4x4
-  design. Moving it to block RAM is our clearest way to save logic. The
-  flip-flops are pipeline and control registers; in the array they hold the two
-  weights of each PE and the values moving between PEs.
-- Timing: both builds meet our 100 MHz target, with a worst setup slack of
-  +0.315 ns (4x4) and +0.354 ns (8x8), so about 103 MHz would still close. The
-  critical path is in the accumulators, from the requantization shift amount to a
-  pipeline register, and two thirds of its delay is routing: the post-processing,
-  not the PE grid, sets our clock.
-- Power (Vivado's estimate): 0.178 W on the 4x4 and 0.251 W on the 8x8, of which
-  0.098 W is the device's static power in both.
-- Latency: a 4×4×4 product takes 25 cycles (250 ns) on the 4x4 and an 8×8×8
-  product 45 cycles (450 ns) on the 8x8. In general row m of a tile leaves the
-  array `m + rows + cols − 1` cycles after the first row enters, with the weight
-  load overlapping the previous tile. The UART dwarfs this: the 23-byte MATMUL
-  command alone takes 115 µs to arrive.
+- PEs: Vivado puts each PE's whole multiply-accumulate into one DSP48E1 slice,
+  and below the first row the partial sum arrives through the DSPs' dedicated
+  cascade instead of general routing. Only the weight select stays in logic
+  (8 LUTs per PE), so the array takes 8 % of the LUTs on the 4x4 and 18 % on
+  the 8x8. Most of the logic that grows with the array is the accumulators'
+  per-column post-processing (rounding, shift, saturation, ReLU).
+- Memories: every memory except the UART FIFO is in block RAM. For the
+  bitstreams the input and accumulator memories are Xilinx XPM macros
+  (`SAConfig.xpmMemories`), because Vivado would otherwise infer them as LUT
+  RAM; the simulations use `SyncReadMem`.
+- Timing: the critical path is in the accumulators' requantization stage
+  (barrel shift, saturation, ReLU), 8 to 11 logic levels and about 70 %
+  routing. The post-processing, not the PE grid, sets our clock.
+- Power is Vivado's vectorless estimate, not a measurement. Static power
+  (0.098 W) dominates the small arrays; on the 8x8 the DSPs take half of the
+  dynamic power.
+- Latency, from the board's cycle counter: a 4×4×4 product takes 25 cycles
+  (250 ns) on the 4x4 and an 8×8×8 product 45 cycles (450 ns) on the 8x8. The
+  UART dwarfs this: the 23-byte MATMUL command alone takes 115 µs to arrive.
 
 ## Architecture
 
@@ -317,7 +325,7 @@ We check our design at several levels, from single blocks to the board:
   models against `FakeTpu`, a software TPU that answers the same protocol
   (`host/cpp/tests/`).
 - Board tests: products of many shapes, a float product, two chained layers and
-  the digits model run on the FPGA and must match the reference bit for bit, on
+  both models run on the FPGA and must match the reference bit for bit, on
   2x2, 4x4 and 8x8 ([board validation](docs/board-validation.md)).
 - Continuous integration: GitHub Actions runs `sbt test` on every push, and
   builds and tests the host on Windows and Linux for every pull request that
@@ -355,7 +363,7 @@ every limit and which ones a parameter change can lift.
 | `src/main/scala/` | Chisel sources: `ifaces/` (`SAConfig`, interfaces), `tpu/` (core, `board/`, `io/`, `compute/`, `memory/`) |
 | `src/test/` | Scala tests, the reference model `tpu.ref.RefModel` and shared `ref_vectors.txt` |
 | `host/` | C++ host library, `tpu_app`, tools and tests ([host/README.md](host/README.md)) |
-| `fpga/` | Vivado scripts, pin constraints, timing notes |
+| `fpga/` | Vivado scripts and pin constraints |
 | `scripts/` | Python: model training, performance plot, PE heatmap |
 | `docs/` | [Architecture](docs/architecture.md), [running your own network](docs/extending.md), [board validation](docs/board-validation.md), [design decisions](docs/design-decisions.md), [making a release](docs/releasing.md) |
 

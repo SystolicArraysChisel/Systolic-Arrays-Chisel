@@ -19,8 +19,10 @@
 using namespace tpu_host;
 using nlohmann::json;
 
-// Memory layout (input memory): X 32x64, W1 64x16, H 32x16, W2 16x12; bias: b1 at 0, b2 at 16.
-constexpr int BATCH = 32, IN = 64, HID = 16, OUT = 10, OUT_PAD = 12;
+// Memory layout (input memory): X 32x64 at 0, W1 64x16 at 2048, H 32x16 at 3072, W2 16x16 at
+// 3584, up to 3840 of 4096; bias: b1 at 0, b2 at 16. The 10 outputs are padded to 16 columns,
+// a multiple of banks for every board configuration (2x2, 4x4, 8x8): ldB and ldC must be.
+constexpr int BATCH = 32, IN = 64, HID = 16, OUT = 10, OUT_PAD = 16;
 constexpr int X_ADDR = 0, W1_ADDR = BATCH * IN, H_ADDR = W1_ADDR + IN * HID,
               W2_ADDR = H_ADDR + BATCH * HID, B2_ADDR = HID;
 

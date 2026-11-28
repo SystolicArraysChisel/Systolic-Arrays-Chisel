@@ -136,15 +136,28 @@ TEST(TpuDriver, RunPollsStatusUntilNotBusy) {
 }
 
 TEST(TpuDriver, ChainsTwoLayersWithoutReadingTheHiddenLayer) {
-    // Y = requant(relu(requant(X . W1)) . W2): 8 -> 12 -> 4, batch of 6. H stays on the TPU.
+    // Y = requant(relu(requant(X . W1)) . W2): 8 -> 16 -> 8, batch of 6. H stays on the TPU.
+    // Every size is a multiple of 8, so the same chain runs on 2x2, 4x4 and 8x8 (run() does not pad).
     auto [fake, tpu] = make(/*busy_polls=*/1);
     std::mt19937 rng(6);
     const Matrix<std::int8_t> x = random_int8(rng, 6, 8);
-    const Matrix<std::int8_t> w1 = random_int8(rng, 8, 12);
-    const Matrix<std::int8_t> w2 = random_int8(rng, 12, 4);
+    const Matrix<std::int8_t> w1 = random_int8(rng, 8, 16);
+    const Matrix<std::int8_t> w2 = random_int8(rng, 16, 8);
     check_two_layer_chain(tpu, x, w1, w2);
     // Only one READ: the hidden layer never came back to the host.
     EXPECT_EQ(std::count(fake->ops.begin(), fake->ops.end(), Op::Read), 1);
+}
+
+TEST(TpuDriver, ChainsTwoLayersOnAn8x8Array) {
+    // Same chain as the board test, with the 8x8 parameters: tpu.run() does not pad, so every
+    // dimension and stride must already be a multiple of the 8 banks.
+    const HwConfig cfg = HwConfig::load(std::string(TEST_DATA_DIR) + "/config_8x8.json");
+    TpuDriver tpu(std::make_unique<FakeTpu>(cfg), cfg);
+    std::mt19937 rng(6);
+    const Matrix<std::int8_t> x = random_int8(rng, 6, 8);
+    const Matrix<std::int8_t> w1 = random_int8(rng, 8, 16);
+    const Matrix<std::int8_t> w2 = random_int8(rng, 16, 8);
+    check_two_layer_chain(tpu, x, w1, w2);
 }
 
 TEST(TpuDriver, WriteBiasThenMatmulWithBias) {

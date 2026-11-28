@@ -8,6 +8,9 @@ results back and checks them. Protocol: `src/main/scala/tpu/io/HostProtocol.scal
 Needs CMake ≥ 3.20 and a C++20 compiler (MSYS2 MinGW g++ on Windows).
 nlohmann/json and GoogleTest are downloaded by CMake.
 
+On Windows, after installing MSYS2: `pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make`
+in the MSYS2 shell, then add `C:\msys64\ucrt64\bin` to `PATH` (the executables need its DLLs).
+
 ```
 cd host/cpp
 cmake -S . -B build -G "MinGW Makefiles"
@@ -38,7 +41,7 @@ same protocol in software.
 From the repository root:
 
 ```
-sbt "runMain tpu.board.EmitBoard"                         # generated/BoardTop.v
+sbt "runMain tpu.board.EmitBoard 4x4"                     # generated/4x4/BoardTop.v (2x2, 4x4 or 8x8)
 vivado -mode batch -source fpga/build.tcl -tclargs 4x4    # build/4x4/BoardTop.bit, config.json
 vivado -mode batch -source fpga/program.tcl -tclargs 4x4  # lost at power off: reprogram
 ```
@@ -48,6 +51,9 @@ Then, from `host/cpp/`:
 ```
 TPU_PORT=COM3 TPU_CONFIG=../../build/4x4/config.json ./build/tpu_host_tests --gtest_filter=Board.*
 ```
+
+In PowerShell set the variables first: `$env:TPU_PORT = "COM3"; $env:TPU_CONFIG = "../../build/4x4/config.json"`.
+`TPU_CONFIG` must be the `config.json` of the bitstream on the board.
 
 `./build/run_board` prints a performance table (cycles, utilization, MAC/s) for
 random square products, checked against the reference model: on the board with

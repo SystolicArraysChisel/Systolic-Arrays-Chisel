@@ -1,0 +1,4 @@
+board
+accuracy 434/450 = 96.4444 %
+layer 1: 31935 cycles, utilization 90.1832 %
+layer 2: 9903 cycles, utilization 72.7052 %

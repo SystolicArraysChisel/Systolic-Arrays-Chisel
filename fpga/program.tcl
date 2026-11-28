@@ -3,15 +3,22 @@
 #
 #   vivado -mode batch -source fpga/program.tcl -tclargs 8x8   (from the repository root)
 #
-# The argument is the configuration name (default 4x4): loads
-# build/<config>/BoardTop.bit.
+# The argument is the configuration name (default 4x4), which loads
+# build/<config>/BoardTop.bit, or the path of a .bit file.
 
 set root [file normalize [file dirname [info script]]/..]
 set name [expr {$argc >= 1 ? [lindex $argv 0] : "4x4"}]
-set bit  "$root/build/$name/BoardTop.bit"
 
-if {![file exists $bit]} {
-  error "$bit not found: run fpga/build.tcl -tclargs $name first"
+if {[string match *.bit $name]} {
+  set bit [file normalize $name]
+  if {![file exists $bit]} {
+    error "$bit not found"
+  }
+} else {
+  set bit "$root/build/$name/BoardTop.bit"
+  if {![file exists $bit]} {
+    error "$bit not found: run fpga/build.tcl -tclargs $name first"
+  }
 }
 
 open_hw_manager

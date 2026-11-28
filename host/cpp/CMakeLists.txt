@@ -33,6 +33,8 @@ add_library(
     include/tpu_host/link.hpp
     include/tpu_host/tpu_driver.hpp
     src/tpu_driver.cpp
+    include/tpu_host/digits.hpp
+    src/digits.cpp
 )
 target_include_directories(tpu_host_lib PUBLIC include)
 target_link_libraries(tpu_host_lib PRIVATE nlohmann_json::nlohmann_json)
@@ -43,7 +45,37 @@ target_compile_options(tpu_host_lib PRIVATE -Wall -Wextra -Wpedantic -Wconversio
 add_executable(run_board src/run_board.cpp)
 target_link_libraries(run_board PUBLIC tpu_host_lib)
 add_executable(run_mlp src/run_mlp.cpp)
-target_link_libraries(run_mlp PRIVATE tpu_host_lib nlohmann_json::nlohmann_json)
+target_link_libraries(run_mlp PRIVATE tpu_host_lib)
+
+# The user application (GUI), only if Qt 6 is installed (MSYS2: pacman -S mingw-w64-x86_64-qt6-base)
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(Qt6_FOUND)
+    qt_standard_project_setup()
+    qt_add_executable(
+        tpu_app
+        WIN32
+        gui/main.cpp
+        gui/main_window.hpp
+        gui/main_window.cpp
+        gui/model_page.hpp
+        gui/model_page.cpp
+        gui/demo_page.hpp
+        gui/demo_page.cpp
+        gui/programmer.hpp
+        gui/programmer.cpp
+        gui/widgets.hpp
+        gui/widgets.cpp
+    )
+    target_link_libraries(tpu_app PRIVATE tpu_host_lib Qt6::Widgets)
+    target_compile_definitions(
+        tpu_app
+        PRIVATE
+            DEMO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/demo"
+            REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../.."
+    )
+else()
+    message(STATUS "Qt 6 not found: tpu_app is not built")
+endif()
 
 # Tests
 enable_testing()
@@ -60,12 +92,15 @@ add_executable(
     tests/test_tpu_driver.cpp
     tests/test_serial_link.cpp
     tests/test_board.cpp
+    tests/test_digits.cpp
 )
 target_compile_definitions(
     tpu_host_tests
     PRIVATE
         TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
         REF_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../../src/test/resources/ref_vectors.txt"
+        DIGITS_MODEL="${CMAKE_CURRENT_SOURCE_DIR}/demo/digits_model.json"
+        SHAPES_MODEL="${CMAKE_CURRENT_SOURCE_DIR}/demo/shapes_model.json"
 )
 target_link_libraries(tpu_host_tests PRIVATE tpu_host_lib GTest::gtest_main GTest::gmock)
 include(GoogleTest)

@@ -50,7 +50,7 @@ The wire protocol (WRITE, READ, MATMUL, STATUS, BIAS) is documented in
 | `src/test/` | Scala tests, including the Scala reference model `tpu.ref.RefModel` and shared `ref_vectors.txt` |
 | `host/` | C++ host library, tests, demo and tools ([host/README.md](host/README.md)) |
 | `fpga/` | Vivado scripts, pin constraints, timing notes |
-| `scripts/` | Python: digits training (`train_digits.py`), PE heatmap (`pe_heatmap.py`), board utilization plot (`board_utilization.py`) |
+| `scripts/` | Python: model training (`train_digits.py`, `train_shapes.py`), PE heatmap (`pe_heatmap.py`), board utilization plot (`board_utilization.py`) |
 | `docs/` | [Design decisions](docs/design-decisions.md), [board validation](docs/board-validation.md) and figures |
 
 ## Build and test
@@ -77,11 +77,23 @@ python3 -m venv .venv; .venv/bin/pip install -r scripts/requirements.txt
 .venv/bin/python scripts/train_digits.py
 ```
 
+A second model, `host/cpp/demo/shapes_model.json`, uses the same network and
+pipeline for 10 drawn shapes and symbols (circle, square, triangle, star, heart,
+arrow, check mark, cross, lightning, smiley). It needs no dataset:
+`scripts/train_shapes.py` draws the training shapes itself, the way the GUI
+draws, and converts them to network input exactly as the GUI does. `run_mlp`
+takes either file.
+
 On Windows use `.venv\Scripts\python` instead of `.venv/bin/python`.
 
 Run it from `host/cpp/` after building the host: `./build/run_mlp` (software
 FakeTpu), or `TPU_PORT=COM3 TPU_CONFIG=../../build/4x4/config.json ./build/run_mlp`
 on the board.
+
+`tpu_app` is the user application (Qt 6): choose a model, draw with the mouse
+and the network classifies the drawing on the board, or on FakeTpu when "Run on"
+is Simulator. It can also program the FPGA through Vivado. See
+[host/README.md](host/README.md#user-application).
 
 | Model | Accuracy (450 test digits) |
 |---|---|

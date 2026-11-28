@@ -5,6 +5,7 @@ import chisel3.util._
 import chisel3.experimental.{annotate, ChiselAnnotation}
 
 import ifaces._
+import tpu.memory.XpmSdpRam
 
 /**
   * Accumulates partial results produced by the systolic array and writes
@@ -48,16 +49,30 @@ class Accumulators(c: SAConfig) extends Module {
   val sCtrl :: sAccum :: sWrite :: Nil = Enum(3)
   val state = RegInit(sCtrl)
 
-  // Accumulator storage: one SyncReadMem per column, mapped to BRAM
-  val accMem = Seq.fill(c.cols) {
-    val mem = SyncReadMem(c.maxM, c.accT)
-    annotate(new ChiselAnnotation {
-      def toFirrtl = firrtl.AttributeAnnotation(mem.toTarget, "ram_style = \"block\"")
-    })
-    mem
-  }
+  // Accumulator storage, one memory per column: a SyncReadMem, which Vivado
+  // builds from LUT RAM (it rejects ram_style = "block" here), or with
+  // xpmMemories an xpm_memory_sdpram block RAM. Port A writes (stage 1),
+  // port B reads; a read of the row written in the same cycle is forwarded
+  // (fwdHit below), so the RAM's behavior on that collision does not matter.
+  val accMem =
+    if (c.xpmMemories) Seq.empty
+    else Seq.fill(c.cols) {
+      val mem = SyncReadMem(c.maxM, c.accT)
+      annotate(new ChiselAnnotation {
+        def toFirrtl = firrtl.AttributeAnnotation(mem.toTarget, "ram_style = \"block\"")
+      })
+      mem
+    }
+  val accXpm =
+    if (!c.xpmMemories) Seq.empty
+    else Seq.fill(c.cols) {
+      val ram = Module(new XpmSdpRam(c.maxM, c.accWidth))
+      ram.init(clock)
+      ram
+    }
 
-  // Bias storage: one LUT-RAM bank per column (async read), a row = cols entries.
+  // Bias storage: one bank per column (async read), a row = cols entries.
+  // Vivado moves the stage-0 register after the read into a block RAM.
   // Only written by BIAS, which the decoder holds while a MATMUL runs.
   val biasMem = Seq.fill(c.cols)(Mem(c.biasDepth / c.cols, c.accT))
   for (col <- 0 until c.cols) {
@@ -144,7 +159,13 @@ class Accumulators(c: SAConfig) extends Module {
 
   val memRdData = Wire(Vec(c.cols, c.accT))
   for (col <- 0 until c.cols) {
-    memRdData(col) := accMem(col).read(rdAddr, rdEn)
+    if (c.xpmMemories) {
+      accXpm(col).io.enb := rdEn
+      accXpm(col).io.addrb := rdAddr(log2Ceil(c.maxM) - 1, 0)
+      memRdData(col) := accXpm(col).io.doutb.asSInt
+    } else {
+      memRdData(col) := accMem(col).read(rdAddr, rdEn)
+    }
   }
 
   // Back-to-back tiles with m = 1 read a row in the cycle stage 1 writes
@@ -162,9 +183,18 @@ class Accumulators(c: SAConfig) extends Module {
       accumRdData(col) + accumPipeData(col)
     )
   }
-  when(accumPipeValid) {
+  if (c.xpmMemories) {
     for (col <- 0 until c.cols) {
-      accMem(col).write(accumPipeRow, accumWrData(col))
+      accXpm(col).io.ena := accumPipeValid
+      accXpm(col).io.wea := accumPipeValid
+      accXpm(col).io.addra := accumPipeRow(log2Ceil(c.maxM) - 1, 0)
+      accXpm(col).io.dina := accumWrData(col).asUInt
+    }
+  } else {
+    when(accumPipeValid) {
+      for (col <- 0 until c.cols) {
+        accMem(col).write(accumPipeRow, accumWrData(col))
+      }
     }
   }
 

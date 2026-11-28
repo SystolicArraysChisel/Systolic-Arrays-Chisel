@@ -1,0 +1,39 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (win64) Build 6511674 Tue Jun 16 11:02:23 MDT 2026
+| Date         : Sat Nov 28 12:11:31 2026
+| Host         : (build machine)
+| Command      : report_utilization -hierarchical -hierarchical_depth 4 -file build/4x4/reports/utilization_hier.rpt
+| Design       : BoardTop
+| Device       : xc7a100tcsg324-1
+| Speed File   : -1
+| Design State : Synthesized
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Utilization by Hierarchy
+
+1. Utilization by Hierarchy
+---------------------------
+
++-----------------+----------------+------------+------------+---------+------+------+--------+--------+------------+
+|     Instance    |     Module     | Total LUTs | Logic LUTs | LUTRAMs | SRLs |  FFs | RAMB36 | RAMB18 | DSP Blocks |
++-----------------+----------------+------------+------------+---------+------+------+--------+--------+------------+
+| BoardTop        |          (top) |       4033 |       2281 |    1720 |   32 | 2115 |      4 |      4 |         16 |
+|   (BoardTop)    |          (top) |          1 |          1 |       0 |    0 |    2 |      0 |      0 |          0 |
+|   c             |            Tpu |       4032 |       2280 |    1720 |   32 | 2113 |      4 |      4 |         16 |
+|     core        |        TpuCore |       3962 |       2218 |    1712 |   32 | 2058 |      4 |      4 |         16 |
+|       acc       |   Accumulators |       1496 |       1320 |     176 |    0 |  814 |      0 |      4 |          0 |
+|       array     |  SystolicArray |        160 |        128 |       0 |   32 |  445 |      0 |      0 |         16 |
+|         (array) |  SystolicArray |         32 |          0 |       0 |   32 |  151 |      0 |      0 |          0 |
+|         grid    |         PEGrid |        128 |        128 |       0 |    0 |  294 |      0 |      0 |         16 |
+|       buf_      |  UnifiedBuffer |       1826 |        290 |    1536 |    0 |   96 |      4 |      0 |          0 |
+|       dec       | CommandDecoder |        221 |        221 |       0 |    0 |  321 |      0 |      0 |          0 |
+|       mover     |      DataMover |        100 |        100 |       0 |    0 |  116 |      0 |      0 |          0 |
+|       seq       |      Sequencer |        159 |        159 |       0 |    0 |  266 |      0 |      0 |          0 |
++-----------------+----------------+------------+------------+---------+------+------+--------+--------+------------+
+
+

@@ -221,6 +221,55 @@ and send images in batches.
 All configurations, timing and per-layer numbers:
 [board validation](docs/board-validation.md).
 
+## Synthesis results
+
+We built our two main configurations, 4x4 and 8x8, with Vivado 2026.1 for the
+Artix-7 XC7A100T (package CSG324, speed grade -1) of the Nexys4 DDR, using our
+batch flow `fpga/build.tcl` with Vivado's default settings and the board's
+100 MHz clock. The reports are in [docs/data/](docs/data/) (`vivado_4x4/`,
+`vivado_8x8/`).
+
+Where the resources go, per block after synthesis:
+
+| Block | 4x4 LUTs | 4x4 FFs | 8x8 LUTs | 8x8 FFs | Memories and DSPs (4x4 / 8x8) |
+|---|---|---|---|---|---|
+| Accumulators | 1,496 | 814 | 2,820 | 1,471 | accumulator memory in LUT RAM (176 / 352 LUTs), bias memory in block RAM (4 / 8 RAMB18) |
+| UnifiedBuffer | 1,826 | 96 | 1,863 | 160 | input memory in LUT RAM (1,536 LUTs), result memory in block RAM (4 RAMB36 / 8 RAMB18) |
+| SystolicArray | 160 | 445 | 688 | 1,653 | 16 / 64 DSP slices, one per PE |
+| CommandDecoder | 221 | 321 | 217 | 319 | |
+| Sequencer | 159 | 266 | 152 | 257 | |
+| DataMover | 100 | 116 | 105 | 118 | |
+| UART and receive FIFO | 70 | 55 | 64 | 55 | FIFO in LUT RAM |
+| Total | 4,033 | 2,115 | 5,918 | 4,035 | 6 / 8 block RAM tiles, 16 / 64 DSPs |
+
+After place and route, Vivado trims the LUTs to 3,883 (4x4) and 5,496 (8x8);
+the flip-flops stay the same.
+
+- The processing elements are cheap: each one is a DSP slice, and the whole
+  array takes 4 % of the LUTs on the 4x4 and 12 % on the 8x8. Going from 4x4 to
+  8x8 (four times the PEs) adds about 1,900 LUTs, and most of them go to the
+  accumulators, which post-process every output column (rounding, shift,
+  saturation, ReLU).
+- Memories: the result memory and the bias memory end up in block RAM, but the
+  input memory and the accumulator memory end up in LUT RAM. Each bank of the
+  input memory has two read ports (activations, and the next tile's weights for
+  double buffering), so Vivado builds it from LUTs: 1,536 LUTs, 38 % of the 4x4
+  design. Moving it to block RAM is our clearest way to save logic. The
+  flip-flops are pipeline and control registers; in the array they hold the two
+  weights of each PE and the values moving between PEs.
+- Timing: both builds meet our 100 MHz target, with a worst setup slack of
+  +0.315 ns (4x4) and +0.354 ns (8x8), so about 103 MHz would still close. The
+  critical path is in the accumulators, from the requantization shift amount to a
+  pipeline register, and two thirds of its delay is routing: the post-processing,
+  not the PE grid, sets our clock.
+- Power (Vivado's estimate): 0.178 W on the 4x4 and 0.251 W on the 8x8, of which
+  0.098 W is the device's static power in both.
+- Latency: a 4×4×4 product takes 25 cycles (250 ns) on the 4x4 and an 8×8×8
+  product 45 cycles (450 ns) on the 8x8. In general row m of a tile leaves the
+  array `m + rows + cols − 1` cycles after the first row enters, with the weight
+  load overlapping the previous tile. The UART dwarfs this: the 23-byte MATMUL
+  command alone takes 115 µs to arrive.
+
 ## Architecture
 
 ![System architecture](docs/figures/architecture.svg)
